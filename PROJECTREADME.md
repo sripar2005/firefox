@@ -86,7 +86,7 @@ The final submission will expand this section with:
 
 ##### Location
 
-`devtools/server/actors/highlighters/`
+`devtools/server/actors/highlighters/eye-dropper.js`
 
 | File | Evidence |
 |------|----------|
@@ -109,5 +109,19 @@ The Observer pattern supports the **Evolution perspective** by:
 - **Decoupling** the highlighter UI from the page events it responds to
 - **Extensibility** — new highlighters can be added without modifying existing event logic
 - **Testability** — events can be simulated in isolation
+
+##### Code Evidence
+
+The EyeDropper class implements the Observer pattern by extending `EventEmitter`:
+
+```javascript
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+
+class EyeDropper extends EventEmitter {
+  constructor(highlighterEnv) {
+    super();
+    // ...
+  }
+}
 
 ## 5. Architectural Assessment
