@@ -123,5 +123,6 @@ class EyeDropper extends EventEmitter {
     // ...
   }
 }
+```
 
 ## 5. Architectural Assessment
