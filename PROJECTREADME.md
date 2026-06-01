@@ -14,7 +14,11 @@
 
 ### 2.5 Testing & Configuration
 
-## 3. Applied Perspective
+## 3. Applied Perspective: Evolution
+
+### What is the Evolution Perspective?
+
+The **Evolution perspective** focuses on how easily a software system can be modified to accommodate future changes. For a project as large and long-lived as Firefox — with over 20 years of continuous development, thousands of contributors, and millions of lines of code — evolution is not just a quality attribute; it's a survival requirement.
 
 ## 4. Architectural Styles & Patterns
 
