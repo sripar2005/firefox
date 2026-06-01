@@ -32,6 +32,17 @@ The primary concerns of the Evolution perspective in Firefox include:
 | **Decoupling** | Are components isolated so that changes in one area don't cascade unpredictably? |
 | **Documentation** | Is the architecture well-documented so new contributors can understand it? |
 
+### Relevance to Firefox
+
+For the scope of this analysis — focusing on the `devtools` (Developer Tools) component — these concerns are particularly relevant. Devtools evolves rapidly to support new web platform features, debugger improvements, and performance profiling enhancements.
+
+A well-evolved architecture allows Mozilla's developers and external contributors to:
+- Add new panels to DevTools
+- Extend existing debugging capabilities
+- Fix bugs with confidence
+- Trust that automated tests will catch regressions
+- Rely on changes being isolated to specific modules
+
 ## 4. Architectural Styles & Patterns
 
 ### 4.1 Architectural Style
