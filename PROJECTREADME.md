@@ -65,6 +65,17 @@ However, challenges remain:
 
 ### Next Steps (For Final Report)
 
+The final submission will expand this section with:
+
+1. **Specific code evidence** showing evolution support (e.g., `nsIObserver` for extensibility)
+2. **Concrete examples** of past evolutionary changes (e.g., adding Network Monitor, multiprocess support)
+3. **Assessment** of strengths and weaknesses in the current architecture
+4. **Recommendations** for improving evolvability
+
+---
+
+*This section is at ~25% completion for the checkpoint and will be expanded for the final submission.*
+
 ## 4. Architectural Styles & Patterns
 
 ### 4.1 Architectural Style
