@@ -120,14 +120,6 @@ The third pattern appears in XPCOM itself, which makes use of service locators. 
 
 ### 4.2 Design Patterns
 
-### Observer Pattern
-
-**Context:** The XPCOM component located at xpcom/ds/nsObserverService.h provides a global observer service for use throughout Firefox.
-
-**Problem:** Many components in Firefox need to react to similar system events, like the browser going offline, a tab being closed, or preferences being changed. If the components required to react to these events were directly called by all components involved, there would be a large mess of dependency relationships.
-
-**Solution:** Firefox uses the Observer design pattern via nsIObserverService. Components that need to be notified on a particular topic can add themselves as an observer using AddObserver(). When an event happens, the component that started the event calls NotifyObservers() passing the name of the topic. The observers are then automatically notified by the observer service.
-
 #### Observer Pattern (Behavioral)
 
 ##### Location
