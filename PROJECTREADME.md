@@ -77,7 +77,7 @@ A well-evolved architecture allows Mozilla's developers and external contributor
 
 ### Architecture Diagram
 
-![Architecture Diagram](image/architecture_diagram.drawio.png)
+![Architecture Diagram](images/ArchitecturalDiagram2.2.png)
 
 **Caption:** The DevTools architecture uses stable core interfaces that allow new panels to be added without modifying existing ones. Each panel is independently extensible, supporting the Evolution perspective through decoupling and well-defined boundaries.
 
