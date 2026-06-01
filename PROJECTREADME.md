@@ -103,4 +103,11 @@ The Observer pattern is implemented in Firefox DevTools highlighters via the **`
 1. **Emit events** — notify listeners when something changes in the page (scroll, resize, DOM mutation)
 2. **Listen for events** — react to changes and update visual overlays accordingly
 
+##### Why It Matters for Evolution
+
+The Observer pattern supports the **Evolution perspective** by:
+- **Decoupling** the highlighter UI from the page events it responds to
+- **Extensibility** — new highlighters can be added without modifying existing event logic
+- **Testability** — events can be simulated in isolation
+
 ## 5. Architectural Assessment
