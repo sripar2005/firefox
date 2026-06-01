@@ -36,18 +36,18 @@ The primary concerns of the Evolution perspective in Firefox include:
 
 For the scope of this analysis — focusing on the `devtools` (Developer Tools) component — these concerns are particularly relevant. Devtools evolves rapidly to support new web platform features, debugger improvements, and performance profiling enhancements.
 
-### Architecture Diagram
-
-![Architecture Diagram](image/architecture_diagram.drawio.png)
-
-**Caption:** The DevTools architecture uses stable core interfaces that allow new panels to be added without modifying existing ones. Each panel is independently extensible, supporting the Evolution perspective through decoupling and well-defined boundaries.
-
 A well-evolved architecture allows Mozilla's developers and external contributors to:
 - Add new panels to DevTools
 - Extend existing debugging capabilities
 - Fix bugs with confidence
 - Trust that automated tests will catch regressions
 - Rely on changes being isolated to specific modules
+
+### Architecture Diagram
+
+![Architecture Diagram](image/architecture_diagram.drawio.png)
+
+**Caption:** The DevTools architecture uses stable core interfaces that allow new panels to be added without modifying existing ones. Each panel is independently extensible, supporting the Evolution perspective through decoupling and well-defined boundaries.
 
 ## 4. Architectural Styles & Patterns
 
