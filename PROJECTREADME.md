@@ -2,6 +2,16 @@
 
 ## 1. Context & Background
 
+Mozilla Firefox is a free, open-source web browser that works on computers and mobile devices. It lets users browse the internet while focusing on privacy and speed. Firefox includes features such as extensions, tracking protection, and developer tools, which makes it popular for everyday user’s and developers.
+
+Firefox was originally created by Mozilla Corporation, and was first released in 2004. The software is maintained by Mozilla Corporation, changes to the codebase are reviewed and approved through Mozilla's Phabricator code review system, where designated module owners and peers have authority over specific parts of the codebase.
+
+More information about Firefox can be found at:
+- GitHub Mirror: https://github.com/mozilla/gecko-dev
+- Main Source Repository: https://github.com/mozilla-firefox/firefox
+- Official Documentation: https://firefox-source-docs.mozilla.org
+
+
 ## 2. Development View
 
 ### 2.1 System Components
