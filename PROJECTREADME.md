@@ -20,6 +20,18 @@
 
 The **Evolution perspective** focuses on how easily a software system can be modified to accommodate future changes. For a project as large and long-lived as Firefox — with over 20 years of continuous development, thousands of contributors, and millions of lines of code — evolution is not just a quality attribute; it's a survival requirement.
 
+### Key Concerns
+
+The primary concerns of the Evolution perspective in Firefox include:
+
+| Concern | Description |
+|---------|-------------|
+| **Modifiability** | How easily can a developer add a new feature or fix a bug without unintended side effects? |
+| **Extensibility** | Can new functionality be added without modifying existing core code (Open/Closed Principle)? |
+| **Testability** | Does the architecture support automated testing to prevent regressions during evolution? |
+| **Decoupling** | Are components isolated so that changes in one area don't cascade unpredictably? |
+| **Documentation** | Is the architecture well-documented so new contributors can understand it? |
+
 ## 4. Architectural Styles & Patterns
 
 ### 4.1 Architectural Style
