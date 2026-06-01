@@ -66,8 +66,8 @@ const PREF_URLBAR_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
   // textbox.  If false, autofill will be disabled.
   ["autoFill", true],
 
-  // Whether enabling adaptive history autofill. This pref is a fallback for the
-  // Nimbus variable `autoFillAdaptiveHistoryEnabled`.
+  // Whether enabling adaptive history autofill. The Nimbus variable
+  // `autoFillAdaptiveHistoryEnabled` writes to this pref via `setPref`.
   ["autoFill.adaptiveHistory.enabled", false],
 
   // Duration in ms to block after backspace penalty. Default: 2 days.
@@ -82,8 +82,8 @@ const PREF_URLBAR_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
   ["autoFill.dismissalBlockDurationMs", 604800000],
 
   // Minimum char length of the user's search string to enable adaptive history
-  // autofill. This pref is a fallback for the Nimbus variable
-  // `autoFillAdaptiveHistoryMinCharsThreshold`.
+  // autofill. The Nimbus variable `autoFillAdaptiveHistoryMinCharsThreshold`
+  // writes to this pref via `setPref`.
   ["autoFill.adaptiveHistory.minCharsThreshold", 0],
 
   // Threshold for use count of input history that we handle as adaptive history
@@ -422,6 +422,9 @@ const PREF_URLBAR_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
 
   // Allow the result menu button to be reached with the Tab key.
   ["resultMenu.keyboardAccessible", true],
+
+  // Timeout in milliseconds before stale rows are removed from the view.
+  ["removeStaleRowsTimeout", 400],
 
   // Feature gate pref for rich suggestions being shown in the urlbar.
   ["richSuggestions.featureGate", true],

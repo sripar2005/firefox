@@ -508,11 +508,8 @@ void MacroAssemblerRiscv64Compat::movePtr(ImmPtr imm, Register dest) {
 }
 void MacroAssemblerRiscv64Compat::movePtr(wasm::SymbolicAddress imm,
                                           Register dest) {
-  DEBUG_PRINTF("[ %s\n", __FUNCTION__);
-  BlockTrampolinePoolScope block_trampoline_pool(this, 8);
-  append(wasm::SymbolicAccess(CodeOffset(nextOffset().getOffset()), imm));
-  ma_liPatchable(dest, ImmWord(-1), Li64);
-  DEBUG_PRINTF("]\n");
+  BufferOffset offset = ma_liPatchable(dest, ImmWord(-1));
+  append(wasm::SymbolicAccess(CodeOffset(offset.getOffset()), imm));
 }
 
 bool MacroAssemblerRiscv64Compat::buildOOLFakeExitFrame(void* fakeReturnAddr) {
@@ -701,7 +698,10 @@ template <typename F>
 void MacroAssemblerRiscv64::RoundHelper(FPURegister dst, FPURegister src,
                                         FPURegister fpu_scratch,
                                         FPURoundingMode mode) {
-  BlockTrampolinePoolScope block_trampoline_pool(this, 20, 2);
+  // TODO: It's unclear why forbidding pools is necessary here. It should either
+  // be documented or pools should be allowed.
+  AutoForbidPoolsAndNops afp(this, 20, 2);
+
   UseScratchRegisterScope temps(this);
   Register scratch2 = temps.Acquire();
 
@@ -770,8 +770,8 @@ void MacroAssemblerRiscv64::RoundHelper(FPURegister dst, FPURegister src,
   // they also satisfy (scratch2 - kFloatExponentBias >= kFloatMantissaBits),
   // and JS round semantics specify that rounding of NaN (Infinity) returns NaN
   // (Infinity), so NaN and Infinity are considered rounded value too.
-  ma_branch(&done, GreaterThanOrEqual, scratch2,
-            Operand(kFloatExponentBias + kFloatMantissaBits));
+  ma_b(scratch2, Imm32(kFloatExponentBias + kFloatMantissaBits), &done,
+       GreaterThanOrEqual, ShortJump);
 
   // Actual rounding is needed along this path
 
@@ -822,7 +822,10 @@ void MacroAssemblerRiscv64::RoundFloatingPointToInteger(Register rd,
                                                         bool Inexact) {
   // Save csr_fflags to scratch & clear exception flags
   if (result != Register::Invalid()) {
-    BlockTrampolinePoolScope block_trampoline_pool(this, 6);
+    // TODO: It's unclear why forbidding pools is necessary here. It should
+    // either be documented or pools should be allowed.
+    AutoForbidPoolsAndNops afp(this, 6);
+
     UseScratchRegisterScope temps(this);
     Register scratch = temps.Acquire();
 
@@ -1191,9 +1194,19 @@ FaultingCodeOffset MacroAssemblerRiscv64::ma_loadDouble(FloatRegister dest,
     encodedOffset = address.offset;
     base = address.base;
   }
+
+  AutoForbidPoolsAndNops afp(this, 1);
   FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
   fld(dest, base, encodedOffset);
   return fco;
+}
+
+FaultingCodeOffset MacroAssemblerRiscv64::ma_loadDouble(FloatRegister dest,
+                                                        const BaseIndex& src) {
+  UseScratchRegisterScope temps(this);
+  Register scratch = temps.Acquire();
+  computeScaledAddress(src, scratch);
+  return ma_loadDouble(dest, Address(scratch, src.offset));
 }
 
 FaultingCodeOffset MacroAssemblerRiscv64::ma_loadFloat(FloatRegister dest,
@@ -1212,9 +1225,19 @@ FaultingCodeOffset MacroAssemblerRiscv64::ma_loadFloat(FloatRegister dest,
     encodedOffset = address.offset;
     base = address.base;
   }
+
+  AutoForbidPoolsAndNops afp(this, 1);
   FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
   flw(dest, base, encodedOffset);
   return fco;
+}
+
+FaultingCodeOffset MacroAssemblerRiscv64::ma_loadFloat(FloatRegister dest,
+                                                       const BaseIndex& src) {
+  UseScratchRegisterScope temps(this);
+  Register scratch = temps.Acquire();
+  computeScaledAddress(src, scratch);
+  return ma_loadFloat(dest, Address(scratch, src.offset));
 }
 
 FaultingCodeOffset MacroAssemblerRiscv64::ma_load(
@@ -1234,6 +1257,8 @@ FaultingCodeOffset MacroAssemblerRiscv64::ma_load(
     encodedOffset = address.offset;
     base = address.base;
   }
+
+  AutoForbidPoolsAndNops afp(this, 1);
   FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
   switch (size) {
     case SizeByte:
@@ -1283,19 +1308,21 @@ FaultingCodeOffset MacroAssemblerRiscv64::ma_store(
   Register address = temps.Acquire();
   computeScaledAddress(dest, address);
 
-  Register scratch = temps.Acquire();
-  ma_li(scratch, imm);
-
-  return ma_store(scratch, Address(address, dest.offset), size, extension);
+  return ma_store(imm, Address(address, dest.offset), size, extension);
 }
 
 FaultingCodeOffset MacroAssemblerRiscv64::ma_store(
     Imm32 imm, Address address, LoadStoreSize size,
     LoadStoreExtension extension) {
   UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  ma_li(scratch, imm);
-  return ma_store(scratch, address, size, extension);
+  Register src;
+  if (imm.value == 0) {
+    src = zero_reg;
+  } else {
+    src = temps.Acquire();
+    ma_li(src, imm);
+  }
+  return ma_store(src, address, size, extension);
 }
 
 FaultingCodeOffset MacroAssemblerRiscv64::ma_store(
@@ -1316,6 +1343,8 @@ FaultingCodeOffset MacroAssemblerRiscv64::ma_store(
     encodedOffset = address.offset;
     base = address.base;
   }
+
+  AutoForbidPoolsAndNops afp(this, 1);
   FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
   switch (size) {
     case SizeByte:
@@ -1337,8 +1366,8 @@ FaultingCodeOffset MacroAssemblerRiscv64::ma_store(
 }
 
 // Memory.
-void MacroAssemblerRiscv64::ma_storeDouble(FloatRegister dest,
-                                           Address address) {
+FaultingCodeOffset MacroAssemblerRiscv64::ma_storeDouble(FloatRegister src,
+                                                         Address address) {
   UseScratchRegisterScope temps(this);
   int16_t encodedOffset;
   Register base;
@@ -1353,10 +1382,23 @@ void MacroAssemblerRiscv64::ma_storeDouble(FloatRegister dest,
     encodedOffset = address.offset;
     base = address.base;
   }
-  fsd(dest, base, encodedOffset);
+
+  AutoForbidPoolsAndNops afp(this, 1);
+  FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
+  fsd(src, base, encodedOffset);
+  return fco;
 }
 
-void MacroAssemblerRiscv64::ma_storeFloat(FloatRegister dest, Address address) {
+FaultingCodeOffset MacroAssemblerRiscv64::ma_storeDouble(
+    FloatRegister src, const BaseIndex& dest) {
+  UseScratchRegisterScope temps(this);
+  Register scratch = temps.Acquire();
+  computeScaledAddress(dest, scratch);
+  return ma_storeDouble(src, Address(scratch, dest.offset));
+}
+
+FaultingCodeOffset MacroAssemblerRiscv64::ma_storeFloat(FloatRegister src,
+                                                        Address address) {
   UseScratchRegisterScope temps(this);
   int16_t encodedOffset;
   Register base;
@@ -1371,7 +1413,19 @@ void MacroAssemblerRiscv64::ma_storeFloat(FloatRegister dest, Address address) {
     encodedOffset = address.offset;
     base = address.base;
   }
-  fsw(dest, base, encodedOffset);
+
+  AutoForbidPoolsAndNops afp(this, 1);
+  FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
+  fsw(src, base, encodedOffset);
+  return fco;
+}
+
+FaultingCodeOffset MacroAssemblerRiscv64::ma_storeFloat(FloatRegister src,
+                                                        const BaseIndex& dest) {
+  UseScratchRegisterScope temps(this);
+  Register scratch = temps.Acquire();
+  computeScaledAddress(dest, scratch);
+  return ma_storeFloat(src, Address(scratch, dest.offset));
 }
 
 void MacroAssemblerRiscv64::computeScaledAddress(const BaseIndex& address,
@@ -1440,117 +1494,6 @@ void MacroAssemblerRiscv64::computeScaledAddress32(const BaseIndex& address,
   } else {
     addw(dest, base, index);
   }
-}
-
-void MacroAssemblerRiscv64Compat::wasmLoadI64Impl(
-    const wasm::MemoryAccessDesc& access, Register memoryBase, Register ptr,
-    Register ptrScratch, Register64 output, Register tmp) {
-  access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset32();
-  MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
-
-  // Maybe add the offset.
-  if (offset) {
-    asMasm().addPtr(ImmWord(offset), ptrScratch);
-    ptr = ptrScratch;
-  }
-
-  asMasm().memoryBarrierBefore(access.sync());
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  FaultingCodeOffset fco;
-  switch (access.type()) {
-    case Scalar::Int8:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      lb(output.reg, scratch, 0);
-      break;
-    case Scalar::Uint8:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      lbu(output.reg, scratch, 0);
-      break;
-    case Scalar::Int16:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      lh(output.reg, scratch, 0);
-      break;
-    case Scalar::Uint16:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      lhu(output.reg, scratch, 0);
-      break;
-    case Scalar::Int32:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      lw(output.reg, scratch, 0);
-      break;
-    case Scalar::Uint32:
-      // TODO(riscv): Why need zero-extension here?
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      lwu(output.reg, scratch, 0);
-      break;
-    case Scalar::Int64:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      ld(output.reg, scratch, 0);
-      break;
-    default:
-      MOZ_CRASH("unexpected array type");
-  }
-
-  append(access, js::wasm::TrapMachineInsnForLoad(access.byteSize()), fco);
-  asMasm().memoryBarrierAfter(access.sync());
-}
-
-void MacroAssemblerRiscv64Compat::wasmStoreI64Impl(
-    const wasm::MemoryAccessDesc& access, Register64 value, Register memoryBase,
-    Register ptr, Register ptrScratch, Register tmp) {
-  access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset32();
-  MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
-
-  // Maybe add the offset.
-  if (offset) {
-    asMasm().addPtr(ImmWord(offset), ptrScratch);
-    ptr = ptrScratch;
-  }
-
-  asMasm().memoryBarrierBefore(access.sync());
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  FaultingCodeOffset fco;
-  switch (access.type()) {
-    case Scalar::Int8:
-    case Scalar::Uint8:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      sb(value.reg, scratch, 0);
-      break;
-    case Scalar::Int16:
-    case Scalar::Uint16:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      sh(value.reg, scratch, 0);
-      break;
-    case Scalar::Int32:
-    case Scalar::Uint32:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      sw(value.reg, scratch, 0);
-      break;
-    case Scalar::Int64:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      sd(value.reg, scratch, 0);
-      break;
-    default:
-      MOZ_CRASH("unexpected array type");
-  }
-
-  append(access, js::wasm::TrapMachineInsnForLoad(access.byteSize()), fco);
-  asMasm().memoryBarrierAfter(access.sync());
 }
 
 void MacroAssemblerRiscv64Compat::profilerEnterFrame(Register framePtr,
@@ -1674,10 +1617,7 @@ FaultingCodeOffset MacroAssemblerRiscv64Compat::loadPrivate(
 
 FaultingCodeOffset MacroAssemblerRiscv64Compat::store8(Imm32 imm,
                                                        const Address& address) {
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  ma_li(scratch, imm);
-  return ma_store(scratch, address, SizeByte);
+  return ma_store(imm, address, SizeByte);
 }
 
 FaultingCodeOffset MacroAssemblerRiscv64Compat::store8(Register src,
@@ -1697,10 +1637,7 @@ FaultingCodeOffset MacroAssemblerRiscv64Compat::store8(
 
 FaultingCodeOffset MacroAssemblerRiscv64Compat::store16(
     Imm32 imm, const Address& address) {
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  ma_li(scratch, imm);
-  return ma_store(scratch, address, SizeHalfWord);
+  return ma_store(imm, address, SizeHalfWord);
 }
 
 FaultingCodeOffset MacroAssemblerRiscv64Compat::store16(
@@ -1733,10 +1670,7 @@ FaultingCodeOffset MacroAssemblerRiscv64Compat::store32(
 
 FaultingCodeOffset MacroAssemblerRiscv64Compat::store32(
     Imm32 src, const Address& address) {
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  move32(src, scratch);
-  return ma_store(scratch, address, SizeWord);
+  return ma_store(src, address, SizeWord);
 }
 
 FaultingCodeOffset MacroAssemblerRiscv64Compat::store32(
@@ -1753,9 +1687,14 @@ template <typename T>
 FaultingCodeOffset MacroAssemblerRiscv64Compat::storePtr(ImmWord imm,
                                                          T address) {
   UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  ma_li(scratch, imm);
-  return ma_store(scratch, address, SizeDouble);
+  Register src;
+  if (imm.value == 0) {
+    src = zero_reg;
+  } else {
+    src = temps.Acquire();
+    ma_li(src, imm);
+  }
+  return ma_store(src, address, SizeDouble);
 }
 
 template FaultingCodeOffset MacroAssemblerRiscv64Compat::storePtr<Address>(
@@ -1961,7 +1900,7 @@ void MacroAssemblerRiscv64Compat::unboxValue(const ValueOperand& operand,
     Label notInt32, end;
     asMasm().branchTestInt32(Assembler::NotEqual, operand, &notInt32);
     convertInt32ToDouble(operand.valueReg(), dest.fpu());
-    ma_branch(&end);
+    jump(&end);
     bind(&notInt32);
     unboxDouble(operand, dest.fpu());
     bind(&end);
@@ -2153,7 +2092,7 @@ void MacroAssemblerRiscv64Compat::loadInt32OrDouble(const Address& src,
     // If it's an int, convert it to double.
     unboxInt32(src, scratch);
     convertInt32ToDouble(scratch, dest);
-    ma_branch(&end);
+    jump(&end);
   }
   bind(&notInt32);
   {
@@ -2263,8 +2202,8 @@ void MacroAssemblerRiscv64Compat::storeValue(const Value& val, Address dest) {
   UseScratchRegisterScope temps(this);
   Register scratch2 = temps.Acquire();
   if (val.isGCThing()) {
-    writeDataRelocation(val);
-    movWithPatch(ImmWord(val.asRawBits()), scratch2);
+    CodeOffset offset = movWithPatch(ImmWord(val.asRawBits()), scratch2);
+    writeDataRelocation(val, offset);
   } else {
     ma_li(scratch2, ImmWord(val.asRawBits()));
   }
@@ -2531,29 +2470,29 @@ void MacroAssemblerRiscv64Compat::handleFailureWithHandlerTail(
 }
 
 CodeOffset MacroAssemblerRiscv64Compat::toggledJump(Label* label) {
-  CodeOffset ret(nextOffset().getOffset());
-  BranchShort(label);
-  return ret;
+  BufferOffset offset = BranchShort(label);
+  return CodeOffset(offset.getOffset());
 }
 
 CodeOffset MacroAssemblerRiscv64Compat::toggledCall(JitCode* target,
                                                     bool enabled) {
-  DEBUG_PRINTF("\ttoggledCall\n");
+  // 6 instruction to materialize the constant.
+  // + 1 instruction for jalr/nop.
+  AutoForbidPoolsAndNops afp(this, 7);
+
   UseScratchRegisterScope temps(this);
   Register scratch = temps.Acquire();
-  BlockTrampolinePoolScope block_trampoline_pool(this, 8);
-  BufferOffset bo = nextOffset();
-  CodeOffset offset(bo.getOffset());
+
+  BufferOffset bo = ma_liPatchable(scratch, ImmPtr(target->raw()));
   addPendingJump(bo, ImmPtr(target->raw()), RelocationKind::JITCODE);
-  ma_liPatchable(scratch, ImmPtr(target->raw()));
   if (enabled) {
     jalr(scratch);
   } else {
     nop();
   }
-  MOZ_ASSERT_IF(!oom(), nextOffset().getOffset() - offset.offset() ==
-                            ToggledCallSize(nullptr));
-  return offset;
+  MOZ_ASSERT_IF(!oom(), nextOffset().getOffset() - bo.getOffset() ==
+                            int(ToggledCallSize(nullptr)));
+  return CodeOffset(bo.getOffset());
 }
 
 void MacroAssembler::subFromStackPtr(Imm32 imm32) {
@@ -2588,11 +2527,14 @@ CodeOffset MacroAssembler::call(wasm::SymbolicAddress imm) {
 }
 
 CodeOffset MacroAssembler::farJumpWithPatch() {
+  // Allocate space which will be patched by patchFarJump().
+  AutoForbidPoolsAndNops afp(this, 5);
+
   UseScratchRegisterScope temps(this);
   Register scratch = temps.Acquire();
   Register scratch2 = temps.Acquire();
-  // Allocate space which will be patched by patchFarJump().
-  CodeOffset farJump(nextInstrOffset(5, 0).getOffset());
+
+  CodeOffset farJump(nextOffset().getOffset());
   auipc(scratch, 0);
   lw(scratch2, scratch, 4 * kInstrSize);
   add(scratch, scratch, scratch2);
@@ -2610,7 +2552,7 @@ CodeOffset MacroAssembler::nopPatchableToCall() {
   // Generate a seven instruction sequence:
   // - Six instructions for WriteLoad64Instructions.
   // - Plus one instruction for the final jalr.
-  BlockTrampolinePoolScope block_trampoline_pool(this, 7);
+  AutoForbidPoolsAndNops afp(this, 7);
   nop();  // lui(rd, (int32_t)high_20);
   nop();  // addi(rd, rd, low_12);  // 31 bits in rd.
   nop();  // slli(rd, rd, 11);      // Space for next 11 bis
@@ -2622,7 +2564,7 @@ CodeOffset MacroAssembler::nopPatchableToCall() {
 }
 
 FaultingCodeOffset MacroAssembler::wasmTrapInstruction() {
-  BlockTrampolinePoolScope block_trampoline_pool(this, 2);
+  AutoForbidPoolsAndNops afp(this, 2);
   FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
   illegal_trap(kWasmTrapCode);
   ebreak();
@@ -2731,9 +2673,14 @@ static void AtomicExchange(MacroAssembler& masm,
   if (nbytes == 4) {
     masm.memoryBarrierBefore(sync);
     masm.bind(&again);
-    BlockTrampolinePoolScope block_trampoline_pool(&masm,
-                                                   /* 1 + 1 + 1 + 4 + 1 = */ 8,
-                                                   1);
+
+    // Forbid pools to ensure all atomic instructions are placed next to each
+    // other. This is also needed to ensure |masm.currentOffset()| returns the
+    // correct offset for the "lr.w" instruction.
+    //
+    // TODO: It's unclear why the initial memoryBarrierBefore is excluded.
+    AutoForbidPoolsAndNops afp(&masm, /* 1 + 1 + 1 + 4 + 1 = */ 8, 1);
+
     if (access) {
       masm.append(*access, wasm::TrapMachineInsn::Atomic,
                   FaultingCodeOffset(masm.currentOffset()));
@@ -2770,8 +2717,14 @@ static void AtomicExchange(MacroAssembler& masm,
 
   masm.bind(&again);
 
-  BlockTrampolinePoolScope block_trampoline_pool(
-      &masm, /* 1 + 1 + 1 + 1 + 4 + 1 + 2 + 1 = */ 12, 1);
+  // Forbid pools to ensure all atomic instructions are placed next to each
+  // other. This is also needed to ensure |masm.currentOffset()| returns the
+  // correct offset for the "lr.w" instruction.
+  //
+  // TODO: It's unclear why the initial memoryBarrierBefore is excluded.
+  AutoForbidPoolsAndNops afp(&masm, /* 1 + 1 + 1 + 1 + 4 + 1 + 2 + 1 = */ 12,
+                             1);
+
   if (access) {
     masm.append(*access, wasm::TrapMachineInsn::Atomic,
                 FaultingCodeOffset(masm.currentOffset()));
@@ -2824,9 +2777,14 @@ static void AtomicExchange64(MacroAssembler& masm,
   masm.memoryBarrierBefore(sync);
 
   masm.bind(&tryAgain);
-  BlockTrampolinePoolScope block_trampoline_pool(&masm,
-                                                 /* 1 + 1 + 1 + 4 + 1 = */ 8,
-                                                 1);
+
+  // Forbid pools to ensure all atomic instructions are placed next to each
+  // other. This is also needed to ensure |masm.currentOffset()| returns the
+  // correct offset for the "lr.d" instruction.
+  //
+  // TODO: It's unclear why the initial memoryBarrierBefore is excluded.
+  AutoForbidPoolsAndNops afp(&masm,
+                             /* 1 + 1 + 1 + 4 + 1 = */ 8, 1);
   if (access) {
     masm.append(*access, js::wasm::TrapMachineInsn::Load64,
                 FaultingCodeOffset(masm.currentOffset()));
@@ -2856,9 +2814,14 @@ static void AtomicFetchOp64(MacroAssembler& masm,
   masm.memoryBarrierBefore(sync);
 
   masm.bind(&tryAgain);
-  BlockTrampolinePoolScope block_trampoline_pool(&masm,
-                                                 /* 1 + 1 + 1 + 4 + 1 = */ 8,
-                                                 1);
+
+  // Forbid pools to ensure all atomic instructions are placed next to each
+  // other. This is also needed to ensure |masm.currentOffset()| returns the
+  // correct offset for the "lr.d" instruction.
+  //
+  // TODO: It's unclear why the initial memoryBarrierBefore is excluded.
+  AutoForbidPoolsAndNops afp(&masm,
+                             /* 1 + 1 + 1 + 4 + 1 = */ 8, 1);
   if (access) {
     masm.append(*access, js::wasm::TrapMachineInsn::Load64,
                 FaultingCodeOffset(masm.currentOffset()));
@@ -2926,6 +2889,7 @@ static void AtomicEffectOp(MacroAssembler& masm,
     masm.bind(&again);
 
     if (access) {
+      AutoForbidPoolsAndNops afp(&masm, /* number of insns = */ 1);
       masm.append(*access, wasm::TrapMachineInsn::Atomic,
                   FaultingCodeOffset(masm.currentOffset()));
     }
@@ -2973,6 +2937,7 @@ static void AtomicEffectOp(MacroAssembler& masm,
   masm.bind(&again);
 
   if (access) {
+    AutoForbidPoolsAndNops afp(&masm, /* number of insns = */ 1);
     masm.append(*access, wasm::TrapMachineInsn::Atomic,
                 FaultingCodeOffset(masm.currentOffset()));
   }
@@ -3058,6 +3023,7 @@ static void AtomicFetchOp(MacroAssembler& masm,
     masm.bind(&again);
 
     if (access) {
+      AutoForbidPoolsAndNops afp(&masm, /* number of insns = */ 1);
       masm.append(*access, wasm::TrapMachineInsn::Atomic,
                   FaultingCodeOffset(masm.currentOffset()));
     }
@@ -3105,6 +3071,7 @@ static void AtomicFetchOp(MacroAssembler& masm,
   masm.bind(&again);
 
   if (access) {
+    AutoForbidPoolsAndNops afp(&masm, /* number of insns = */ 1);
     masm.append(*access, wasm::TrapMachineInsn::Atomic,
                 FaultingCodeOffset(masm.currentOffset()));
   }
@@ -3394,23 +3361,22 @@ CodeOffset MacroAssembler::call(const Address& addr) {
 }
 
 void MacroAssembler::call(ImmPtr imm) {
-  BufferOffset bo = m_buffer.nextOffset();
+  BufferOffset bo = ma_call(imm);
   addPendingJump(bo, imm, RelocationKind::HARDCODED);
-  ma_call(imm);
 }
 
 void MacroAssembler::call(ImmWord imm) { call(ImmPtr((void*)imm.value)); }
 
 void MacroAssembler::call(JitCode* c) {
-  DEBUG_PRINTF("[ %s\n", __FUNCTION__);
-  BlockTrampolinePoolScope block_trampoline_pool(this, 8);
+  // 6 instruction to materialize the constant.
+  // + 1 instructions for the call.
+  AutoForbidPoolsAndNops afp(this, 7);
+
   UseScratchRegisterScope temps(this);
   Register scratch = temps.Acquire();
-  BufferOffset bo = m_buffer.nextOffset();
+  BufferOffset bo = ma_liPatchable(scratch, ImmPtr(c->raw()));
   addPendingJump(bo, ImmPtr(c->raw()), RelocationKind::JITCODE);
-  ma_liPatchable(scratch, ImmPtr(c->raw()));
   callJitNoProfiler(scratch);
-  DEBUG_PRINTF("]\n");
 }
 
 void MacroAssembler::callWithABIPre(uint32_t* stackAdjust, bool callFromWasm) {
@@ -3567,6 +3533,7 @@ static void CompareExchange64(MacroAssembler& masm,
   masm.bind(&tryAgain);
 
   if (access) {
+    AutoForbidPoolsAndNops afp(&masm, /* number of insns = */ 1);
     masm.append(*access, wasm::TrapMachineInsn::Atomic,
                 FaultingCodeOffset(masm.currentOffset()));
   }
@@ -3660,6 +3627,7 @@ CodeOffset MacroAssembler::sub32FromMemAndBranchIfNegativeWithPatch(
   MOZ_ASSERT(scratch != address.base);
   ma_load(scratch, address);
   addiw(scratch, scratch, 128);
+  // Points immediately after the instruction to patch.
   CodeOffset patchPoint = CodeOffset(currentOffset());
   ma_store(scratch, address);
   ma_b(scratch, scratch, label, Assembler::Signed);
@@ -3779,8 +3747,8 @@ void MacroAssembler::moveValue(const Value& src, const ValueOperand& dest) {
     return;
   }
 
-  writeDataRelocation(src);
-  movWithPatch(ImmWord(src.asRawBits()), dest.valueReg());
+  CodeOffset offset = movWithPatch(ImmWord(src.asRawBits()), dest.valueReg());
+  writeDataRelocation(src, offset);
 }
 
 void MacroAssembler::nearbyIntDouble(RoundingMode mode, FloatRegister src,
@@ -3893,14 +3861,13 @@ void MacroAssembler::patchCallToNop(uint8_t* call) {
 }
 
 CodeOffset MacroAssembler::callWithPatch() {
-  BlockTrampolinePoolScope block_trampoline_pool(this, 2);
-  DEBUG_PRINTF("\tcallWithPatch\n");
+  AutoForbidPoolsAndNops afp(this, 2);
+
   UseScratchRegisterScope temps(this);
   Register scratch = temps.Acquire();
   auto [Hi20, Lo12] = ToHigh20Low12(0);
   auipc(scratch, Hi20);  // Read PC + Hi20 into scratch.
   jalr(scratch, Lo12);   // jump PC + Hi20 + Lo12
-  DEBUG_PRINTF("\tret %d\n", currentOffset());
   return CodeOffset(currentOffset());
 }
 
@@ -4031,9 +3998,8 @@ void MacroAssembler::PopRegsInMaskIgnore(LiveRegisterSet set,
 }
 
 CodeOffset MacroAssembler::move32WithPatch(Register dest) {
-  CodeOffset offs = CodeOffset(currentOffset());
-  ma_liPatchable(dest, Imm32(0));
-  return offs;
+  BufferOffset offset = ma_liPatchable(dest, Imm32(0));
+  return CodeOffset(offset.getOffset());
 }
 
 void MacroAssembler::patchMove32(CodeOffset offset, Imm32 n) {
@@ -4140,7 +4106,7 @@ void MacroAssembler::roundFloat32ToInt32(FloatRegister src, Register dest,
   {
     // Round, ties away from zero.
     RoundMaxMag_l_s(dest, src);
-    ma_branch(&done);
+    jump(&done);
   }
 
   // Handle the complicated case of a negative input.
@@ -4202,7 +4168,7 @@ void MacroAssembler::roundDoubleToInt32(FloatRegister src, Register dest,
   {
     // Round, ties away from zero.
     RoundMaxMag_l_d(dest, src);
-    ma_branch(&done);
+    jump(&done);
   }
 
   // Handle the complicated case of a negative input.
@@ -4530,6 +4496,7 @@ static void CompareExchange(MacroAssembler& masm,
     masm.bind(&again);
 
     if (access) {
+      AutoForbidPoolsAndNops afp(&masm, /* number of insns = */ 1);
       masm.append(*access, wasm::TrapMachineInsn::Atomic,
                   FaultingCodeOffset(masm.currentOffset()));
     }
@@ -4562,6 +4529,7 @@ static void CompareExchange(MacroAssembler& masm,
   masm.bind(&again);
 
   if (access) {
+    AutoForbidPoolsAndNops afp(&masm, /* number of insns = */ 1);
     masm.append(*access, wasm::TrapMachineInsn::Atomic,
                 FaultingCodeOffset(masm.currentOffset()));
   }
@@ -4650,26 +4618,26 @@ void MacroAssembler::wasmCompareExchange(
 
 void MacroAssembler::wasmLoad(const wasm::MemoryAccessDesc& access,
                               Register memoryBase, Register ptr,
-                              Register ptrScratch, AnyRegister output) {
-  wasmLoadImpl(access, memoryBase, ptr, ptrScratch, output, InvalidReg);
+                              AnyRegister output) {
+  wasmLoadImpl(access, memoryBase, ptr, output);
 }
 
 void MacroAssembler::wasmLoadI64(const wasm::MemoryAccessDesc& access,
                                  Register memoryBase, Register ptr,
-                                 Register ptrScratch, Register64 output) {
-  wasmLoadI64Impl(access, memoryBase, ptr, ptrScratch, output, InvalidReg);
+                                 Register64 output) {
+  wasmLoadImpl(access, memoryBase, ptr, AnyRegister(output.reg));
 }
 
 void MacroAssembler::wasmStore(const wasm::MemoryAccessDesc& access,
                                AnyRegister value, Register memoryBase,
-                               Register ptr, Register ptrScratch) {
-  wasmStoreImpl(access, value, memoryBase, ptr, ptrScratch, InvalidReg);
+                               Register ptr) {
+  wasmStoreImpl(access, value, memoryBase, ptr);
 }
 
 void MacroAssembler::wasmStoreI64(const wasm::MemoryAccessDesc& access,
                                   Register64 value, Register memoryBase,
-                                  Register ptr, Register ptrScratch) {
-  wasmStoreI64Impl(access, value, memoryBase, ptr, ptrScratch, InvalidReg);
+                                  Register ptr) {
+  wasmStoreImpl(access, AnyRegister(value.reg), memoryBase, ptr);
 }
 
 void MacroAssemblerRiscv64::Clear_if_nan_d(Register rd, FPURegister fs) {
@@ -4846,7 +4814,7 @@ void MacroAssembler::wasmCheckSlowCallsite(Register ra_, Label* notSlow,
 
 CodeOffset MacroAssembler::wasmMarkedSlowCall(const wasm::CallSiteDesc& desc,
                                               const Register reg) {
-  BlockTrampolinePoolScope block_trampoline_pool(this, 2);
+  AutoForbidPoolsAndNops afp(this, 2);
   CodeOffset offset = call(desc, reg);
   wasmMarkCallAsSlow();
   return offset;
@@ -4856,31 +4824,20 @@ CodeOffset MacroAssembler::wasmMarkedSlowCall(const wasm::CallSiteDesc& desc,
 // This method generates lui + addi instruction block that can be
 // modified by UpdateLoad64Value, either during compilation (eg.
 // Assembler::bind), or during execution (eg. jit::PatchJump).
-void MacroAssemblerRiscv64::ma_liPatchable(Register dest, Imm32 imm) {
-  m_buffer.ensureSpace(2 * kInstrSize);
+BufferOffset MacroAssemblerRiscv64::ma_liPatchable(Register dest, Imm32 imm) {
+  AutoForbidPoolsAndNops afp(this, 2);
+  BufferOffset offset = nextOffset();
+
   auto [high_20, low_12] = ToHigh20Low12(imm.value);
   lui(dest, high_20);
   addi(dest, dest, low_12);
-}
 
-void MacroAssemblerRiscv64::ma_liPatchable(Register dest, ImmPtr imm) {
-  return ma_liPatchable(dest, ImmWord(uintptr_t(imm.value)));
-}
-
-void MacroAssemblerRiscv64::ma_liPatchable(Register dest, ImmWord imm,
-                                           LiFlags flags) {
-  DEBUG_PRINTF("\tma_liPatchable\n");
-  if (Li64 == flags) {
-    li_constant(dest, imm.value);
-  } else {
-    li_ptr(dest, imm.value);
-  }
+  return offset;
 }
 
 void MacroAssemblerRiscv64::ma_li(Register dest, ImmGCPtr ptr) {
-  BlockTrampolinePoolScope block_trampoline_pool(this, 6);
-  writeDataRelocation(ptr);
-  ma_liPatchable(dest, ImmPtr(ptr.value));
+  BufferOffset offset = ma_liPatchable(dest, ImmPtr(ptr.value));
+  writeDataRelocation(ptr, offset);
 }
 void MacroAssemblerRiscv64::ma_li(Register dest, Imm32 imm) {
   RV_li(dest, imm.value);
@@ -4889,14 +4846,10 @@ void MacroAssemblerRiscv64::ma_li(Register dest, Imm64 imm) {
   RV_li(dest, imm.value);
 }
 void MacroAssemblerRiscv64::ma_li(Register dest, CodeLabel* label) {
-  DEBUG_PRINTF("[ %s\n", __FUNCTION__);
-  BlockTrampolinePoolScope block_trampoline_pool(this, 7);
-  BufferOffset bo = m_buffer.nextOffset();
   JitSpew(JitSpew_Codegen, ".load CodeLabel %p", label);
-  ma_liPatchable(dest, ImmWord(/* placeholder */ 0));
+  BufferOffset bo = ma_liPatchable(dest, ImmPtr(/* placeholder */ nullptr));
   label->patchAt()->bind(bo.getOffset());
   label->setLinkMode(CodeLabel::MoveImmediate);
-  DEBUG_PRINTF("]\n");
 }
 void MacroAssemblerRiscv64::ma_li(Register dest, ImmWord imm) {
   RV_li(dest, imm.value);
@@ -4967,37 +4920,60 @@ void MacroAssemblerRiscv64::ma_mulPtrTestOverflow(Register rd, Register rj,
   ma_b(scratch, Register(scratch2), overflow, Assembler::NotEqual);
 }
 
-int32_t MacroAssemblerRiscv64::GetOffset(int32_t offset, Label* L,
-                                         OffsetSize bits) {
-  if (L) {
-    offset = branchOffsetHelper(L, bits);
-  } else {
-    MOZ_ASSERT(is_intn(offset, bits));
+bool MacroAssemblerRiscv64::UseShortBranch(
+    Label* L, JumpKind jumpKind, OffsetSize bits,
+    mozilla::Maybe<AutoForbidNops>& maybeAfn) {
+  // If the label is already bound, we can directly determine which jump to use.
+  if (L->bound()) {
+    // Prevent nop sequences in branch instructions.
+    AutoForbidNops afn(this);
+
+    // Call |nextInstrOffset()| instead of just |nextOffset()| to ensure
+    // branches which are about to go out of range are also taken into account
+    // when computing the next instruction offset.
+    int32_t offset = nextInstrOffset(2, 1).getOffset();
+
+    // Use a short branch if the label is near enough.
+    if (is_intn(offset - L->offset(), bits)) {
+      // Extend the AutoForbidNops scope to ensure AutoForbidPoolsAndNops used
+      // for short branches doesn't add emit nop sequences, because the nop
+      // sequences can move the label outside the reachable range for this
+      // branch.
+      maybeAfn.emplace(this);
+      return true;
+    }
+    return false;
   }
-  return offset;
+
+  // Otherwise use a short branch if requested.
+  return jumpKind == ShortJump;
 }
 
-bool MacroAssemblerRiscv64::CalculateOffset(Label* L, OffsetSize bits,
-                                            int32_t* offset) {
-  if (!isNear(L, bits)) return false;
-  *offset = GetOffset(*offset, L, bits);
-  return true;
+void MacroAssemblerRiscv64::Branch(Label* L, JumpKind jumpKind) {
+  mozilla::Maybe<AutoForbidNops> afn;
+  if (UseShortBranch(L, jumpKind, OffsetSize::kOffset21, afn)) {
+    BranchShort(L);
+  } else {
+    BranchLong(L);
+  }
 }
 
-void MacroAssemblerRiscv64::BranchShortHelper(int32_t offset, Label* L) {
-  MOZ_ASSERT(L == nullptr || offset == 0);
-  BlockTrampolinePoolScope block_trampoline_pool(this, 2, 1);
-  offset = GetOffset(offset, L, OffsetSize::kOffset21);
+BufferOffset MacroAssemblerRiscv64::BranchShort(Label* L) {
+  AutoForbidPoolsAndNops afp(this, 2, 1);
+
+  int32_t offset = GetOffset(L, OffsetSize::kOffset21);
+  BufferOffset bo = nextOffset();
   Assembler::j(offset);
+  return bo;
 }
 
-bool MacroAssemblerRiscv64::BranchShortHelper(int32_t offset, Label* L,
-                                              Condition cond, Register rs,
-                                              const Operand& rt) {
-  MOZ_ASSERT(L == nullptr || offset == 0);
-  MOZ_ASSERT(rt.is_reg() || rt.is_imm());
+void MacroAssemblerRiscv64::Branch(Label* L, Condition cond, Register rs,
+                                   const Operand& rt, JumpKind jumpKind) {
+  MOZ_ASSERT(cond != Always);
+  MOZ_ASSERT_IF(rt.is_reg(), rs != rt.rm());
+
   UseScratchRegisterScope temps(this);
-  Register scratch = Register();
+  Register scratch;
   if (rt.is_imm()) {
     if (rt.immediate() == 0) {
       scratch = zero;
@@ -5009,204 +4985,137 @@ bool MacroAssemblerRiscv64::BranchShortHelper(int32_t offset, Label* L,
     MOZ_ASSERT(rt.is_reg());
     scratch = rt.rm();
   }
-  {
-    BlockTrampolinePoolScope block_trampoline_pool(this, 2, 1);
-    switch (cond) {
-      case Always:
-        if (!CalculateOffset(L, OffsetSize::kOffset21, &offset)) return false;
-        Assembler::j(offset);
-        break;
-      case Equal:
-        // rs == rt
-        if (rt.is_reg() && rs == rt.rm()) {
-          if (!CalculateOffset(L, OffsetSize::kOffset21, &offset)) return false;
-          Assembler::j(offset);
-        } else {
-          if (!CalculateOffset(L, OffsetSize::kOffset13, &offset)) return false;
-          Assembler::beq(rs, scratch, offset);
-        }
-        break;
-      case NotEqual:
-        // rs != rt
-        if (rt.is_reg() && rs == rt.rm()) {
-          break;  // No code needs to be emitted
-        } else {
-          if (!CalculateOffset(L, OffsetSize::kOffset13, &offset)) return false;
-          Assembler::bne(rs, scratch, offset);
-        }
-        break;
 
-      // Signed comparison.
-      case GreaterThan:
-        // rs > rt
-        if (rt.is_reg() && rs == rt.rm()) {
-          break;  // No code needs to be emitted.
-        } else {
-          if (!CalculateOffset(L, OffsetSize::kOffset13, &offset)) return false;
-          Assembler::bgt(rs, scratch, offset);
-        }
-        break;
-      case GreaterThanOrEqual:
-        // rs >= rt
-        if (rt.is_reg() && rs == rt.rm()) {
-          if (!CalculateOffset(L, OffsetSize::kOffset21, &offset)) return false;
-          Assembler::j(offset);
-        } else {
-          if (!CalculateOffset(L, OffsetSize::kOffset13, &offset)) return false;
-          Assembler::bge(rs, scratch, offset);
-        }
-        break;
-      case LessThan:
-        // rs < rt
-        if (rt.is_reg() && rs == rt.rm()) {
-          break;  // No code needs to be emitted.
-        } else {
-          if (!CalculateOffset(L, OffsetSize::kOffset13, &offset)) return false;
-          Assembler::blt(rs, scratch, offset);
-        }
-        break;
-      case LessThanOrEqual:
-        // rs <= rt
-        if (rt.is_reg() && rs == rt.rm()) {
-          if (!CalculateOffset(L, OffsetSize::kOffset21, &offset)) return false;
-          Assembler::j(offset);
-        } else {
-          if (!CalculateOffset(L, OffsetSize::kOffset13, &offset)) return false;
-          Assembler::ble(rs, scratch, offset);
-        }
-        break;
-
-      // Unsigned comparison.
-      case Above:
-        // rs > rt
-        if (rt.is_reg() && rs == rt.rm()) {
-          break;  // No code needs to be emitted.
-        } else {
-          if (!CalculateOffset(L, OffsetSize::kOffset13, &offset)) return false;
-          Assembler::bgtu(rs, scratch, offset);
-        }
-        break;
-      case AboveOrEqual:
-        // rs >= rt
-        if (rt.is_reg() && rs == rt.rm()) {
-          if (!CalculateOffset(L, OffsetSize::kOffset21, &offset)) return false;
-          Assembler::j(offset);
-        } else {
-          if (!CalculateOffset(L, OffsetSize::kOffset13, &offset)) return false;
-          Assembler::bgeu(rs, scratch, offset);
-        }
-        break;
-      case Below:
-        // rs < rt
-        if (rt.is_reg() && rs == rt.rm()) {
-          break;  // No code needs to be emitted.
-        } else {
-          if (!CalculateOffset(L, OffsetSize::kOffset13, &offset)) return false;
-          bltu(rs, scratch, offset);
-        }
-        break;
-      case BelowOrEqual:
-        // rs <= rt
-        if (rt.is_reg() && rs == rt.rm()) {
-          if (!CalculateOffset(L, OffsetSize::kOffset21, &offset)) return false;
-          Assembler::j(offset);
-        } else {
-          if (!CalculateOffset(L, OffsetSize::kOffset13, &offset)) return false;
-          Assembler::bleu(rs, scratch, offset);
-        }
-        break;
-      default:
-        MOZ_CRASH("UNREACHABLE");
-    }
+  mozilla::Maybe<AutoForbidNops> afn;
+  if (UseShortBranch(L, jumpKind, OffsetSize::kOffset13, afn)) {
+    BranchShort(L, cond, rs, scratch);
+  } else {
+    Label skip;
+    Condition neg_cond = InvertCondition(cond);
+    BranchShort(&skip, neg_cond, rs, scratch);
+    BranchLong(L);
+    bind(&skip);
   }
-  return true;
 }
 
-// BRANCH_ARGS_CHECK checks that conditional jump arguments are correct.
-#define BRANCH_ARGS_CHECK(cond, rs, rt)                                 \
-  MOZ_ASSERT(((cond) == Always && (rs) == zero && (rt).rm() == zero) || \
-             ((cond) != Always && ((rs) != zero || (rt).rm() != zero)))
+void MacroAssemblerRiscv64::BranchShort(Label* L, Condition cond, Register rs,
+                                        Register rt) {
+  MOZ_ASSERT(cond != Always);
+  MOZ_ASSERT(rs != rt);
 
-bool MacroAssemblerRiscv64::BranchShortCheck(int32_t offset, Label* L,
-                                             Condition cond, Register rs,
-                                             const Operand& rt) {
-  BRANCH_ARGS_CHECK(cond, rs, rt);
+  AutoForbidPoolsAndNops afp(this, 2, 1);
 
-  if (!L) {
-    MOZ_ASSERT(is_int13(offset));
-    return BranchShortHelper(offset, nullptr, cond, rs, rt);
+  int32_t offset = GetOffset(L, OffsetSize::kOffset13);
+
+  switch (cond) {
+    case Equal:
+      Assembler::beq(rs, rt, offset);
+      break;
+    case NotEqual:
+      Assembler::bne(rs, rt, offset);
+      break;
+
+    // Signed comparison.
+    case GreaterThan:
+      Assembler::bgt(rs, rt, offset);
+      break;
+    case GreaterThanOrEqual:
+      Assembler::bge(rs, rt, offset);
+      break;
+    case LessThan:
+      Assembler::blt(rs, rt, offset);
+      break;
+    case LessThanOrEqual:
+      Assembler::ble(rs, rt, offset);
+      break;
+
+    // Unsigned comparison.
+    case Above:
+      Assembler::bgtu(rs, rt, offset);
+      break;
+    case AboveOrEqual:
+      Assembler::bgeu(rs, rt, offset);
+      break;
+    case Below:
+      Assembler::bltu(rs, rt, offset);
+      break;
+    case BelowOrEqual:
+      Assembler::bleu(rs, rt, offset);
+      break;
+
+    default:
+      MOZ_CRASH("UNREACHABLE");
   }
-  MOZ_ASSERT(offset == 0);
-  return BranchShortHelper(0, L, cond, rs, rt);
-}
-
-void MacroAssemblerRiscv64::BranchShort(Label* L) { BranchShortHelper(0, L); }
-
-bool MacroAssemblerRiscv64::BranchShort(int32_t offset, Condition cond,
-                                        Register rs, const Operand& rt) {
-  return BranchShortCheck(offset, nullptr, cond, rs, rt);
-}
-
-bool MacroAssemblerRiscv64::BranchShort(Label* L, Condition cond, Register rs,
-                                        const Operand& rt) {
-  return BranchShortCheck(0, L, cond, rs, rt);
 }
 
 void MacroAssemblerRiscv64::BranchLong(Label* L) {
+  AutoForbidPoolsAndNops afp(this, 2);
+
   // Generate position independent long branch.
+  int32_t imm = branchLongOffsetHelper(L);
+
   UseScratchRegisterScope temps(this);
   Register scratch = temps.Acquire();
-  int32_t imm = branchLongOffsetHelper(L);
-  GenPCRelativeJump(scratch, imm);
+
+  auto [Hi20, Lo12] = ToHigh20Low12(imm);
+  auipc(scratch, Hi20);  // Read PC + Hi20 into scratch.
+  jr(scratch, Lo12);     // jump PC + Hi20 + Lo12
 }
 
-CodeOffset MacroAssemblerRiscv64::BranchAndLinkLong(Label* L) {
+CodeOffset MacroAssemblerRiscv64::BranchAndLink(Label* L) {
+  mozilla::Maybe<AutoForbidNops> afn;
+  if (UseShortBranch(L, ShortJump, OffsetSize::kOffset21, afn)) {
+    AutoForbidPoolsAndNops afp(this, 2, 1);
+
+    int32_t offset = GetOffset(L, OffsetSize::kOffset21);
+    return jal(offset);
+  }
+
+  AutoForbidPoolsAndNops afp(this, 2);
+
   // Generate position independent long branch and link.
   int32_t imm = branchLongOffsetHelper(L);
+
   UseScratchRegisterScope temps(this);
   Register scratch = temps.Acquire();
-  GenPCRelativeJumpAndLink(scratch, imm);
+
+  auto [Hi20, Lo12] = ToHigh20Low12(imm);
+  auipc(scratch, Hi20);  // Read PC + Hi20 into scratch.
+  jalr(scratch, Lo12);   // jump PC + Hi20 + Lo12
+
   return CodeOffset(currentOffset());
 }
 
 void MacroAssemblerRiscv64::ma_branch(Label* target, Condition cond,
                                       Register r1, const Operand& r2,
                                       JumpKind jumpKind) {
-  // Always prefer short jumps when the label is already bound. (If the label is
-  // bound, BranchShort can cheaply determine if short jumps are possible.)
-  if (target->bound()) {
-    jumpKind = ShortJump;
+  MOZ_ASSERT((cond == Always && r1 == zero && r2.rm() == zero) ||
+             (cond != Always && (r1 != zero || r2.rm() != zero)));
+
+  if (r2.is_reg() && r1 == r2.rm()) {
+    switch (cond) {
+      case Always:
+      case Equal:
+      case GreaterThanOrEqual:
+      case LessThanOrEqual:
+      case AboveOrEqual:
+      case BelowOrEqual:
+        Branch(target, jumpKind);
+        return;
+
+      case NotEqual:
+      case GreaterThan:
+      case LessThan:
+      case Above:
+      case Below:
+        return;  // No code needs to be emitted
+
+      default:
+        MOZ_CRASH("UNREACHABLE");
+    }
   }
 
-  if (jumpKind == ShortJump && BranchShort(target, cond, r1, r2)) {
-    return;
-  }
-
-  if (cond != Always) {
-    Label skip;
-    Condition neg_cond = InvertCondition(cond);
-    MOZ_ALWAYS_TRUE(
-        BranchShort(&skip, neg_cond, r1, r2));  // Guaranteed to be short.
-    BranchLong(target);
-    bind(&skip);
-  } else {
-    BranchLong(target);
-  }
-}
-
-// Branches when done from within riscv code.
-void MacroAssemblerRiscv64::ma_b(Register lhs, Address addr, Label* label,
-                                 Condition c, JumpKind jumpKind) {
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  MOZ_ASSERT(lhs != scratch);
-  ma_load(scratch, addr, SizeDouble);
-  ma_b(lhs, Register(scratch), label, c, jumpKind);
-}
-
-void MacroAssemblerRiscv64::ma_b(Register lhs, ImmPtr imm, Label* l,
-                                 Condition c, JumpKind jumpKind) {
-  ma_b(lhs, ImmWord(uintptr_t(imm.value)), l, c, jumpKind);
+  Branch(target, cond, r1, r2, jumpKind);
 }
 
 // Branches when done from within riscv code.
@@ -5246,14 +5155,6 @@ void MacroAssemblerRiscv64::ma_b(Register lhs, Imm32 imm, Label* label,
       ma_branch(label, c, lhs, Operand(imm.value), jumpKind);
       break;
   }
-}
-
-void MacroAssemblerRiscv64::ma_b(Address addr, Imm32 imm, Label* label,
-                                 Condition c, JumpKind jumpKind) {
-  UseScratchRegisterScope temps(this);
-  Register scratch2 = temps.Acquire();
-  ma_load(scratch2, addr);
-  ma_b(Register(scratch2), imm, label, c, jumpKind);
 }
 
 void MacroAssemblerRiscv64::ma_b(Register lhs, Register rhs, Label* label,
@@ -5602,14 +5503,16 @@ void MacroAssemblerRiscv64::ma_mul64(Register rd, Register rs, Imm64 rt) {
   mul(rd, rs, scratch);
 }
 
-void MacroAssemblerRiscv64::ma_jump(ImmPtr dest) {
-  DEBUG_PRINTF("[ %s\n", __FUNCTION__);
-  BlockTrampolinePoolScope block_trampoline_pool(this, 8);
+BufferOffset MacroAssemblerRiscv64::ma_jump(ImmPtr dest) {
+  // 6 instruction to materialize the constant.
+  // + 1 instruction for jr.
+  AutoForbidPoolsAndNops afp(this, 7);
+
   UseScratchRegisterScope temps(this);
   Register scratch = temps.Acquire();
-  ma_liPatchable(scratch, dest);
+  BufferOffset offset = ma_liPatchable(scratch, dest);
   jr(scratch, 0);
-  DEBUG_PRINTF("]\n");
+  return offset;
 }
 
 // fp instructions
@@ -5944,124 +5847,17 @@ void MacroAssemblerRiscv64::ma_push(FloatRegister f) {
   }
 }
 
-FaultingCodeOffset MacroAssemblerRiscv64::ma_fld_s(FloatRegister ft,
-                                                   Address address) {
-  int32_t offset = address.offset;
-  Register base = address.base;
+BufferOffset MacroAssemblerRiscv64::ma_call(ImmPtr dest) {
+  // 6 instruction to materialize the constant.
+  // + 1 instruction for jalr.
+  AutoForbidPoolsAndNops afp(this, 7);
 
-  FaultingCodeOffset fco;
-  if (is_intn(offset, 12)) {
-    fco = FaultingCodeOffset(currentOffset());
-    flw(ft, base, offset);
-  } else {
-    UseScratchRegisterScope temps(this);
-    Register scratch = temps.Acquire();
-    MOZ_ASSERT(base != scratch);
-    ma_add64(scratch, base, Imm32(offset));
-    fco = FaultingCodeOffset(currentOffset());
-    flw(ft, scratch, 0);
-  }
-  return fco;
-}
-FaultingCodeOffset MacroAssemblerRiscv64::ma_fld_d(FloatRegister ft,
-                                                   Address address) {
-  int32_t offset = address.offset;
-  Register base = address.base;
-
-  FaultingCodeOffset fco;
-  if (is_intn(offset, 12)) {
-    fco = FaultingCodeOffset(currentOffset());
-    fld(ft, base, offset);
-  } else {
-    UseScratchRegisterScope temps(this);
-    Register scratch = temps.Acquire();
-    MOZ_ASSERT(base != scratch);
-    ma_add64(scratch, base, Imm32(offset));
-    fco = FaultingCodeOffset(currentOffset());
-    fld(ft, scratch, 0);
-  }
-  return fco;
-}
-FaultingCodeOffset MacroAssemblerRiscv64::ma_fst_d(FloatRegister ft,
-                                                   Address address) {
-  int32_t offset = address.offset;
-  Register base = address.base;
-
-  FaultingCodeOffset fco;
-  if (is_intn(offset, 12)) {
-    fco = FaultingCodeOffset(currentOffset());
-    fsd(ft, base, offset);
-  } else {
-    UseScratchRegisterScope temps(this);
-    Register scratch = temps.Acquire();
-    MOZ_ASSERT(base != scratch);
-    ma_add64(scratch, base, Imm32(offset));
-    fco = FaultingCodeOffset(currentOffset());
-    fsd(ft, scratch, 0);
-  }
-  return fco;
-}
-FaultingCodeOffset MacroAssemblerRiscv64::ma_fst_s(FloatRegister ft,
-                                                   Address address) {
-  int32_t offset = address.offset;
-  Register base = address.base;
-  FaultingCodeOffset fco;
-  if (is_intn(offset, 12)) {
-    fco = FaultingCodeOffset(currentOffset());
-    fsw(ft, base, offset);
-  } else {
-    UseScratchRegisterScope temps(this);
-    Register scratch = temps.Acquire();
-    MOZ_ASSERT(base != scratch);
-    ma_add64(scratch, base, Imm32(offset));
-    fco = FaultingCodeOffset(currentOffset());
-    fsw(ft, scratch, 0);
-  }
-  return fco;
-}
-
-FaultingCodeOffset MacroAssemblerRiscv64::ma_fst_d(FloatRegister src,
-                                                   BaseIndex address) {
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  computeScaledAddress(address, scratch);
-  FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
-  ma_fst_d(src, Address(scratch, address.offset));
-  return fco;
-}
-
-FaultingCodeOffset MacroAssemblerRiscv64::ma_fst_s(FloatRegister src,
-                                                   BaseIndex address) {
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  computeScaledAddress(address, scratch);
-  FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
-  ma_fst_s(src, Address(scratch, address.offset));
-  return fco;
-}
-
-void MacroAssemblerRiscv64::ma_fld_d(FloatRegister dest, const BaseIndex& src) {
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  computeScaledAddress(src, scratch);
-  ma_fld_d(dest, Address(scratch, src.offset));
-}
-
-void MacroAssemblerRiscv64::ma_fld_s(FloatRegister dest, const BaseIndex& src) {
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  computeScaledAddress(src, scratch);
-  ma_fld_s(dest, Address(scratch, src.offset));
-}
-
-void MacroAssemblerRiscv64::ma_call(ImmPtr dest) {
-  DEBUG_PRINTF("[ %s\n", __FUNCTION__);
-  BlockTrampolinePoolScope block_trampoline_pool(this, 8);
   UseScratchRegisterScope temps(this);
   temps.Exclude(GeneralRegisterSet(1 << CallReg.code()));
-  ma_liPatchable(CallReg, dest);
+
+  BufferOffset offset = ma_liPatchable(CallReg, dest);
   jalr(CallReg, 0);
-  DEBUG_PRINTF("]\n");
+  return offset;
 }
 
 void MacroAssemblerRiscv64::CompareIsNotNanF32(Register rd, FPURegister cmp1,
@@ -6146,28 +5942,28 @@ void MacroAssemblerRiscv64::Clz32(Register rd, Register rs) {
   mv(x, rs);
   ma_li(n, Imm32(32));
   srliw(y, x, 16);
-  ma_branch(&L0, Equal, y, Operand(zero_reg));
+  ma_b(y, y, &L0, Zero, ShortJump);
   mv(x, y);
   addiw(n, n, -16);
   bind(&L0);
   srliw(y, x, 8);
-  ma_branch(&L1, Equal, y, Operand(zero_reg));
+  ma_b(y, y, &L1, Zero, ShortJump);
   addiw(n, n, -8);
   mv(x, y);
   bind(&L1);
   srliw(y, x, 4);
-  ma_branch(&L2, Equal, y, Operand(zero_reg));
+  ma_b(y, y, &L2, Zero, ShortJump);
   addiw(n, n, -4);
   mv(x, y);
   bind(&L2);
   srliw(y, x, 2);
-  ma_branch(&L3, Equal, y, Operand(zero_reg));
+  ma_b(y, y, &L3, Zero, ShortJump);
   addiw(n, n, -2);
   mv(x, y);
   bind(&L3);
   srliw(y, x, 1);
   subw(rd, n, x);
-  ma_branch(&L4, Equal, y, Operand(zero_reg));
+  ma_b(y, y, &L4, Zero, ShortJump);
   addiw(rd, n, -2);
   bind(&L4);
 }
@@ -6199,33 +5995,33 @@ void MacroAssemblerRiscv64::Clz64(Register rd, Register rs) {
   mv(x, rs);
   ma_li(n, Imm32(64));
   srli(y, x, 32);
-  ma_branch(&L0, Equal, y, Operand(zero_reg));
+  ma_b(y, y, &L0, Zero, ShortJump);
   addiw(n, n, -32);
   mv(x, y);
   bind(&L0);
   srli(y, x, 16);
-  ma_branch(&L1, Equal, y, Operand(zero_reg));
+  ma_b(y, y, &L1, Zero, ShortJump);
   addiw(n, n, -16);
   mv(x, y);
   bind(&L1);
   srli(y, x, 8);
-  ma_branch(&L2, Equal, y, Operand(zero_reg));
+  ma_b(y, y, &L2, Zero, ShortJump);
   addiw(n, n, -8);
   mv(x, y);
   bind(&L2);
   srli(y, x, 4);
-  ma_branch(&L3, Equal, y, Operand(zero_reg));
+  ma_b(y, y, &L3, Zero, ShortJump);
   addiw(n, n, -4);
   mv(x, y);
   bind(&L3);
   srli(y, x, 2);
-  ma_branch(&L4, Equal, y, Operand(zero_reg));
+  ma_b(y, y, &L4, Zero, ShortJump);
   addiw(n, n, -2);
   mv(x, y);
   bind(&L4);
   srli(y, x, 1);
   subw(rd, n, x);
-  ma_branch(&L5, Equal, y, Operand(zero_reg));
+  ma_b(y, y, &L5, Zero, ShortJump);
   addiw(rd, n, -2);
   bind(&L5);
 }
@@ -6414,7 +6210,7 @@ void MacroAssemblerRiscv64::ma_mod_mask(Register src, Register dest,
   // Set the hold appropriately.
   ma_b(remain, remain, &negative, Signed, ShortJump);
   ma_li(hold, Imm32(1));
-  ma_branch(&head, ShortJump);
+  jump(&head);
 
   bind(&negative);
   ma_li(hold, Imm32(-1));
@@ -6454,18 +6250,6 @@ void MacroAssemblerRiscv64::ma_mod_mask(Register src, Register dest,
   bind(&done);
 }
 
-void MacroAssemblerRiscv64::ma_fmovz(FloatFormat fmt, FloatRegister fd,
-                                     FloatRegister fj, Register rk) {
-  Label done;
-  ma_b(rk, zero, &done, Assembler::NotEqual);
-  if (fmt == SingleFloat) {
-    fmv_s(fd, fj);
-  } else {
-    fmv_d(fd, fj);
-  }
-  bind(&done);
-}
-
 void MacroAssemblerRiscv64::ByteSwap(Register dest, Register src,
                                      int operand_size, Register scratch) {
   MOZ_ASSERT(operand_size == 4 || operand_size == 8);
@@ -6480,11 +6264,14 @@ void MacroAssemblerRiscv64::ByteSwap(Register dest, Register src,
   MOZ_ASSERT(scratch != src);
   MOZ_ASSERT(scratch != dest);
   if (operand_size == 4) {
+    // TODO: It's unclear why forbidding pools is necessary here. It should
+    // either be documented or pools should be allowed.
+    AutoForbidPoolsAndNops afp(this, 17);
+
     // Uint32_t x1 = 0x00FF00FF;
     // x0 = (x0 << 16 | x0 >> 16);
     // x0 = (((x0 & x1) << 8)  | ((x0 & (x1 << 8)) >> 8));
     UseScratchRegisterScope temps(this);
-    BlockTrampolinePoolScope block_trampoline_pool(this, 17);
     MOZ_ASSERT((dest != t6) && (src != t6));
     Register x0 = temps.Acquire();
     Register x1 = temps.Acquire();
@@ -6500,13 +6287,16 @@ void MacroAssemblerRiscv64::ByteSwap(Register dest, Register src,
     srliw(dest, dest, 8);
     or_(dest, dest, x2);  // (((x0 & x1) << 8)  | ((x0 & (x1 << 8)) >> 8))
   } else {
+    // TODO: It's unclear why forbidding pools is necessary here. It should
+    // either be documented or pools should be allowed.
+    AutoForbidPoolsAndNops afp(this, 30);
+
     // uinx24_t x1 = 0x0000FFFF0000FFFFl;
     // uinx24_t x1 = 0x00FF00FF00FF00FFl;
     // x0 = (x0 << 32 | x0 >> 32);
     // x0 = (x0 & x1) << 16 | (x0 & (x1 << 16)) >> 16;
     // x0 = (x0 & x1) << 8  | (x0 & (x1 << 8)) >> 8;
     UseScratchRegisterScope temps(this);
-    BlockTrampolinePoolScope block_trampoline_pool(this, 30);
     MOZ_ASSERT((dest != t6) && (src != t6));
     Register x0 = temps.Acquire();
     Register x1 = temps.Acquire();
@@ -6724,62 +6514,41 @@ void MacroAssemblerRiscv64::Dror(Register rd, Register rs, Register rt) {
 
 void MacroAssemblerRiscv64::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
                                          Register memoryBase, Register ptr,
-                                         Register ptrScratch,
-                                         AnyRegister output, Register tmp) {
+                                         AnyRegister output) {
   access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset32();
-  MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
-
-  // Maybe add the offset.
-  if (offset) {
-    asMasm().addPtr(ImmWord(offset), ptrScratch);
-    ptr = ptrScratch;
-  }
 
   asMasm().memoryBarrierBefore(access.sync());
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
+
+  BaseIndex address(memoryBase, ptr, TimesOne, access.offset32());
+
   FaultingCodeOffset fco;
   switch (access.type()) {
     case Scalar::Int8:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      lb(output.gpr(), scratch, 0);
+      fco = ma_load(output.gpr(), address, SizeByte, SignExtend);
       break;
     case Scalar::Uint8:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      lbu(output.gpr(), scratch, 0);
+      fco = ma_load(output.gpr(), address, SizeByte, ZeroExtend);
       break;
     case Scalar::Int16:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      lh(output.gpr(), scratch, 0);
+      fco = ma_load(output.gpr(), address, SizeHalfWord, SignExtend);
       break;
     case Scalar::Uint16:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      lhu(output.gpr(), scratch, 0);
+      fco = ma_load(output.gpr(), address, SizeHalfWord, ZeroExtend);
       break;
     case Scalar::Int32:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      lw(output.gpr(), scratch, 0);
+      fco = ma_load(output.gpr(), address, SizeWord, SignExtend);
       break;
     case Scalar::Uint32:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      lwu(output.gpr(), scratch, 0);
+      fco = ma_load(output.gpr(), address, SizeWord, ZeroExtend);
       break;
-    case Scalar::Float64:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      fld(output.fpu(), scratch, 0);
+    case Scalar::Int64:
+      fco = ma_load(output.gpr(), address, SizeDouble, SignExtend);
       break;
     case Scalar::Float32:
-      add(scratch, memoryBase, ptr);
-      fco = FaultingCodeOffset(currentOffset());
-      flw(output.fpu(), scratch, 0);
+      fco = ma_loadFloat(output.fpu(), address);
+      break;
+    case Scalar::Float64:
+      fco = ma_loadDouble(output.fpu(), address);
       break;
     default:
       MOZ_CRASH("unexpected array type");
@@ -6791,70 +6560,49 @@ void MacroAssemblerRiscv64::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
 
 void MacroAssemblerRiscv64::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
                                           AnyRegister value,
-                                          Register memoryBase, Register ptr,
-                                          Register ptrScratch, Register tmp) {
+                                          Register memoryBase, Register ptr) {
   access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset32();
-  MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
-  // Maybe add the offset.
-  if (offset) {
-    asMasm().addPtr(ImmWord(offset), ptrScratch);
-    ptr = ptrScratch;
-  }
-
-  unsigned byteSize = access.byteSize();
-  bool isSigned = Scalar::isSignedIntType(access.type());
-  bool isFloat = Scalar::isFloatingType(access.type());
-
-  BaseIndex address(memoryBase, ptr, TimesOne);
   asMasm().memoryBarrierBefore(access.sync());
+
+  BaseIndex address(memoryBase, ptr, TimesOne, access.offset32());
+
   FaultingCodeOffset fco;
-  if (isFloat) {
-    if (byteSize == 4) {
-      fco = ma_fst_s(value.fpu(), address);
-    } else {
-      fco = ma_fst_d(value.fpu(), address);
-    }
-  } else {
-    fco =
-        ma_store(value.gpr(), address, static_cast<LoadStoreSize>(8 * byteSize),
-                 isSigned ? SignExtend : ZeroExtend);
+  switch (access.type()) {
+    case Scalar::Int8:
+      fco = ma_store(value.gpr(), address, SizeByte, SignExtend);
+      break;
+    case Scalar::Uint8:
+      fco = ma_store(value.gpr(), address, SizeByte, ZeroExtend);
+      break;
+    case Scalar::Int16:
+      fco = ma_store(value.gpr(), address, SizeHalfWord, SignExtend);
+      break;
+    case Scalar::Uint16:
+      fco = ma_store(value.gpr(), address, SizeHalfWord, ZeroExtend);
+      break;
+    case Scalar::Int32:
+      fco = ma_store(value.gpr(), address, SizeWord, SignExtend);
+      break;
+    case Scalar::Uint32:
+      fco = ma_store(value.gpr(), address, SizeWord, ZeroExtend);
+      break;
+    case Scalar::Int64:
+      fco = ma_store(value.gpr(), address, SizeDouble, SignExtend);
+      break;
+    case Scalar::Float32:
+      fco = ma_storeFloat(value.fpu(), address);
+      break;
+    case Scalar::Float64:
+      fco = ma_storeDouble(value.fpu(), address);
+      break;
+    default:
+      MOZ_CRASH("unexpected array type");
   }
+
   // Only the last emitted instruction is a memory access.
   append(access, js::wasm::TrapMachineInsnForStore(access.byteSize()), fco);
   asMasm().memoryBarrierAfter(access.sync());
-}
-
-void MacroAssemblerRiscv64::GenPCRelativeJumpAndLink(Register rd,
-                                                     int32_t imm32) {
-  auto [Hi20, Lo12] = ToHigh20Low12(imm32);
-  auipc(rd, Hi20);  // Read PC + Hi20 into scratch.
-  jalr(rd, Lo12);   // jump PC + Hi20 + Lo12
-}
-
-CodeOffset MacroAssemblerRiscv64::BranchAndLinkShortHelper(int32_t offset,
-                                                           Label* L) {
-  MOZ_ASSERT(L == nullptr || offset == 0);
-  BlockTrampolinePoolScope block_trampoline_pool(this, 2, 1);
-  offset = GetOffset(offset, L, OffsetSize::kOffset21);
-  return jal(offset);
-}
-
-CodeOffset MacroAssemblerRiscv64::BranchAndLinkShort(int32_t offset) {
-  MOZ_ASSERT(is_int21(offset));
-  return BranchAndLinkShortHelper(offset, nullptr);
-}
-
-CodeOffset MacroAssemblerRiscv64::BranchAndLinkShort(Label* L) {
-  return BranchAndLinkShortHelper(0, L);
-}
-
-CodeOffset MacroAssemblerRiscv64::BranchAndLink(Label* L) {
-  if (L->bound() && !isNear(L)) {
-    return BranchAndLinkLong(L);
-  }
-  return BranchAndLinkShort(L);
 }
 
 void MacroAssemblerRiscv64::ma_fmv_d(FloatRegister src, ValueOperand dest) {

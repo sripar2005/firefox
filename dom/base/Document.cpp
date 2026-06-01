@@ -195,6 +195,7 @@
 #include "mozilla/dom/HTMLObjectElement.h"
 #include "mozilla/dom/HTMLSharedElement.h"
 #include "mozilla/dom/HTMLTextAreaElement.h"
+#include "mozilla/dom/HTMLVideoElement.h"
 #include "mozilla/dom/HighlightRegistry.h"
 #include "mozilla/dom/InspectorUtils.h"
 #include "mozilla/dom/IntegrityPolicy.h"
@@ -219,6 +220,8 @@
 #include "mozilla/dom/PageTransitionEventBinding.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
+#include "mozilla/dom/PictureInPictureEvent.h"
+#include "mozilla/dom/PictureInPictureService.h"
 #include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/PopoverData.h"
 #include "mozilla/dom/PostMessageEvent.h"
@@ -289,6 +292,7 @@
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/ipc/IdleSchedulerChild.h"
 #include "mozilla/ipc/MessageChannel.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/net/ChannelEventQueue.h"
 #include "mozilla/net/Cookie.h"
 #include "mozilla/net/CookieCommons.h"
@@ -1026,7 +1030,8 @@ ExternalResourceMap::PendingLoad::OnStartRequest(nsIRequest* aRequest) {
     return rv2;
   }
 
-  return mTargetListener->OnStartRequest(aRequest);
+  nsCOMPtr<nsIStreamListener> listener = mTargetListener;
+  return listener->OnStartRequest(aRequest);
 }
 
 nsresult ExternalResourceMap::PendingLoad::SetupViewer(
@@ -1109,7 +1114,8 @@ ExternalResourceMap::PendingLoad::OnDataAvailable(nsIRequest* aRequest,
   if (mDisplayDocument->ExternalResourceMap().HaveShutDown()) {
     return NS_BINDING_ABORTED;
   }
-  return mTargetListener->OnDataAvailable(aRequest, aStream, aOffset, aCount);
+  nsCOMPtr<nsIStreamListener> listener = mTargetListener;
+  return listener->OnDataAvailable(aRequest, aStream, aOffset, aCount);
 }
 
 NS_IMETHODIMP
@@ -1950,11 +1956,10 @@ void Document::ConstructUbiNode(void* storage) {
 }
 
 void Document::LoadEventFired() {
-  // Collect page load timings
+  // Collect page load timings. The pageload event itself is now submitted from
+  // Document::Destroy() so it can include the final LCP value and any other
+  // metrics that aren't stable at load time.
   AccumulatePageLoadTelemetry();
-
-  // Record page load event
-  RecordPageLoadEventTelemetry();
 
   // Release the JS bytecode cache from its wait on the load event, and
   // potentially dispatch the encoding of the bytecode.
@@ -1963,9 +1968,9 @@ void Document::LoadEventFired() {
   }
 }
 
-void Document::RecordPageLoadEventTelemetry() {
+void Document::ReportPageLoadEvent() {
   // If the page load time is empty, then the content wasn't something we want
-  // to report (i.e. not a top level document).
+  // to report (i.e. not a top level document, or load never completed).
   if (!mPageloadEventData.HasLoadTime()) {
     return;
   }
@@ -1995,6 +2000,19 @@ void Document::RecordPageLoadEventTelemetry() {
   // Return if we are not sending an event for this pageload.
   if (pageloadEventType == mozilla::PageloadEventType::kNone) {
     return;
+  }
+
+  // Refresh metrics that can change between the load event and document
+  // destruction. LCP in particular keeps updating until first user interaction
+  // or page teardown, so the value captured in AccumulatePageLoadTelemetry is
+  // not necessarily final.
+  if (const nsDOMNavigationTiming* timing = GetNavigationTiming()) {
+    if (TimeStamp navigationStart = timing->GetNavigationStartTimeStamp()) {
+      if (TimeStamp lcpTime = timing->GetLargestContentfulRenderTimeStamp()) {
+        mPageloadEventData.set_lcpTime(static_cast<uint32_t>(
+            (lcpTime - navigationStart).ToMilliseconds()));
+      }
+    }
   }
 
 #ifdef ACCESSIBILITY
@@ -2253,14 +2271,6 @@ void Document::AccumulatePageLoadTelemetry() {
     }
   }
 
-  // Report the most up to date LCP time. For our histogram we actually report
-  // this on page unload.
-  if (TimeStamp lcpTime =
-          GetNavigationTiming()->GetLargestContentfulRenderTimeStamp()) {
-    mPageloadEventData.set_lcpTime(
-        static_cast<uint32_t>((lcpTime - navigationStart).ToMilliseconds()));
-  }
-
   // Load event
   if (TimeStamp loadEventStart =
           GetNavigationTiming()->GetLoadEventStartTimeStamp()) {
@@ -2514,6 +2524,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(Document)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mStyleSheetSetList)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mScriptLoader)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCustomContentContainer)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPictureInPictureElement)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPopoverHintStackParent)
 
   DocumentOrShadowRoot::Traverse(tmp, cb);
@@ -2692,6 +2703,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Document)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mViewTransitionUpdateCallbacks)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mReferrerInfo)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPreloadReferrerInfo)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPictureInPictureElement)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPopoverHintStackParent)
 
   if (tmp->mDocGroup && tmp->mDocGroup->GetBrowsingContextGroup()) {
@@ -3760,6 +3772,15 @@ nsresult Document::InitPolicyContainer(nsIChannel* aChannel) {
     mPolicyContainer = new PolicyContainer();
   }
 
+  // Propagate the document's IP address space to the policy container so that
+  // workers inheriting this container can perform Local Network Access checks
+  // (workers don't have a browsing context to read this from).
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+  nsILoadInfo::IPAddressSpace ipAddressSpace = loadInfo->GetIpAddressSpace();
+  if (ipAddressSpace != nsILoadInfo::Unknown) {
+    mPolicyContainer->SetIPAddressSpace(ipAddressSpace);
+  }
+
   return NS_OK;
 }
 
@@ -4551,7 +4572,7 @@ bool Document::IsScriptTracking(JSContext* aCx) const {
     return false;
   }
 
-  return net::UrlClassifierCommon::IsTrackingClassificationFlag(
+  return net::ChannelClassifierUtils::IsTrackingClassificationFlag(
       entry.Data().thirdPartyFlags, IsInPrivateBrowsing());
 }
 
@@ -12267,6 +12288,10 @@ void Document::Destroy() {
 
   ReportDocumentUseCounters();
   ReportShadowedProperties();
+  // ReportPageLoadEvent must run before ReportLCP: ReportLCP skips submitting
+  // its histogram when mPageloadEventData.HasDomain() is true, and HasDomain()
+  // is set inside ReportPageLoadEvent.
+  ReportPageLoadEvent();
   ReportLCP();
   SetDevToolsWatchingDOMMutations(false);
 
@@ -12733,6 +12758,12 @@ void Document::OnPageHide(bool aPersisted, EventTarget* aDispatchStartTarget,
     // however a hidden page wouldn't trigger that again, so it makes no
     // sense to dispatch such event here.
   }
+
+  if (auto* element = HTMLVideoElement::FromNodeOrNull(
+          GetPictureInPictureElementInternal())) {
+    PictureInPictureService::DispatchExitPictureInPictureRunnable(nullptr,
+                                                                  element);
+  }
 }
 
 void Document::WillRemoveRoot() {
@@ -12889,44 +12920,38 @@ void Document::NotifyLoading(bool aNewParentIsLoading,
                              const ReadyState& aCurrentState,
                              ReadyState aNewState) {
   // Mirror the top-level loading state down to all subdocuments
-  bool was_loading = mAncestorIsLoading ||
-                     aCurrentState == READYSTATE_LOADING ||
-                     aCurrentState == READYSTATE_INTERACTIVE;
-  bool is_loading = aNewParentIsLoading || aNewState == READYSTATE_LOADING ||
-                    aNewState == READYSTATE_INTERACTIVE;  // new value for state
-  bool set_load_state = was_loading != is_loading;
-
-  MOZ_LOG(
-      gTimeoutDeferralLog, mozilla::LogLevel::Debug,
-      ("NotifyLoading for doc %p: currentAncestor: %d, newParent: %d, "
-       "currentState %d newState: %d, was_loading: %d, is_loading: %d, "
-       "set_load_state: %d",
-       (void*)this, mAncestorIsLoading, aNewParentIsLoading, (int)aCurrentState,
-       (int)aNewState, was_loading, is_loading, set_load_state));
+  const bool wasLoading = mAncestorIsLoading ||
+                          aCurrentState == READYSTATE_LOADING ||
+                          aCurrentState == READYSTATE_INTERACTIVE;
+  const bool isLoading =
+      aNewParentIsLoading || aNewState == READYSTATE_LOADING ||
+      aNewState == READYSTATE_INTERACTIVE;  // new value for state
+  MOZ_LOG(gTimeoutDeferralLog, mozilla::LogLevel::Debug,
+          ("NotifyLoading for doc %p: currentAncestor: %d, newParent: %d, "
+           "currentState %d newState: %d, wasLoading: %d, isLoading: %d",
+           (void*)this, mAncestorIsLoading, aNewParentIsLoading,
+           (int)aCurrentState, (int)aNewState, wasLoading, isLoading));
 
   mAncestorIsLoading = aNewParentIsLoading;
-  if (set_load_state && StaticPrefs::dom_timeout_defer_during_load() &&
-      !NodePrincipal()->IsURIInPrefList(
-          "dom.timeout.defer_during_load.force-disable")) {
-    // Tell our innerwindow (and thus TimeoutManager)
-    nsPIDOMWindowInner* inner = GetInnerWindow();
-    if (inner) {
-      inner->SetActiveLoadingState(is_loading);
-    }
-    BrowsingContext* context = GetBrowsingContext();
-    if (context) {
-      // Don't use PreOrderWalk to mirror this down; go down one level as a
-      // time so we can set mAncestorIsLoading and take into account the
-      // readystates of the subdocument.  In the child process it will call
-      // NotifyLoading() to notify the innerwindow/TimeoutManager, and then
-      // iterate it's children
-      for (auto& child : context->Children()) {
-        MOZ_LOG(gTimeoutDeferralLog, mozilla::LogLevel::Debug,
-                ("bc: %p SetAncestorLoading(%d)", (void*)child, is_loading));
-        // Setting ancestor loading on a discarded browsing context has no
-        // effect.
-        (void)child->SetAncestorLoading(is_loading);
-      }
+  if (wasLoading == isLoading) {
+    return;
+  }
+  // Tell our innerwindow (and thus TimeoutManager)
+  if (nsPIDOMWindowInner* inner = GetInnerWindow()) {
+    inner->SetActiveLoadingState(isLoading);
+  }
+  if (BrowsingContext* context = GetBrowsingContext()) {
+    // Don't use PreOrderWalk to mirror this down; go down one level as a
+    // time so we can set mAncestorIsLoading and take into account the
+    // readystates of the subdocument.  In the child process it will call
+    // NotifyLoading() to notify the innerwindow/TimeoutManager, and then
+    // iterate it's children
+    for (auto& child : context->Children()) {
+      MOZ_LOG(gTimeoutDeferralLog, mozilla::LogLevel::Debug,
+              ("bc: %p SetAncestorLoading(%d)", (void*)child, isLoading));
+      // Setting ancestor loading on a discarded browsing context has no
+      // effect.
+      (void)child->SetAncestorLoading(isLoading);
     }
   }
 }
@@ -15519,6 +15544,44 @@ already_AddRefed<Promise> Document::ExitFullscreen(ErrorResult& aRv) {
   return promise.forget();
 }
 
+bool Document::PictureInPictureEnabled() {
+  return FeaturePolicyUtils::IsFeatureAllowed(this, u"picture-in-picture"_ns) &&
+         PictureInPictureWindow::PictureInPictureEnabled();
+}
+
+Element* Document::GetPictureInPictureElementInternal() const {
+  return mPictureInPictureElement;
+}
+
+void Document::SetPictureInPictureElement(Element* aElement) {
+  mPictureInPictureElement = aElement;
+}
+
+// https://w3c.github.io/picture-in-picture/#exit-pip
+already_AddRefed<Promise> Document::ExitPictureInPicture(ErrorResult& aRv) {
+  PictureInPictureService::EnsureInit();
+  RefPtr<Promise> p = Promise::Create(GetRelevantGlobal(), aRv);
+
+  if (!p) {
+    return nullptr;
+  }
+
+  auto* pipElement =
+      HTMLVideoElement::FromNodeOrNull(GetPictureInPictureElementInternal());
+
+  // 1. If pictureInPictureElement is null, return a promise rejected with
+  // InvalidStateError and abort these steps.
+  if (!pipElement) {
+    p->MaybeRejectWithInvalidStateError(
+        "No element is currently in picture-in-picture");
+    return p.forget();
+  }
+
+  PictureInPictureService::DispatchExitPictureInPictureRunnable(p, pipElement);
+
+  return p.forget();
+}
+
 static void AskWindowToExitFullscreen(Document* aDoc) {
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
     nsContentUtils::DispatchEventOnlyToChrome(
@@ -16775,10 +16838,14 @@ static void SetKeyboardLockStatusAndMaybeDispatchEvent(
 void Document::RequestFullscreenInContentProcess(
     UniquePtr<FullscreenRequest> aRequest, bool aApplyFullscreenDirectly) {
   MOZ_ASSERT(XRE_IsContentProcess());
+  if (!CheckFullscreenAllowedElementType(aRequest->Element())) {
+    aRequest->Reject("FullscreenDeniedNotHTMLSVGOrMathML");
+    return;
+  }
+
   // If we are in the content process, we can apply the fullscreen
   // state directly only if we have been in DOM fullscreen, because
   // otherwise we always need to notify the chrome.
-
   if (aApplyFullscreenDirectly ||
       nsContentUtils::GetInProcessSubtreeRootDocument(this)->Fullscreen()) {
     // This optimization causes edge case behaviors, due to not going via the
@@ -16787,11 +16854,6 @@ void Document::RequestFullscreenInContentProcess(
     aRequest->SetShouldDispatchKeyboardLockEvent(aRequest->GetPromise() &&
                                                  aRequest->Document() == this);
     ApplyFullscreen(std::move(aRequest));
-    return;
-  }
-
-  if (!CheckFullscreenAllowedElementType(aRequest->Element())) {
-    aRequest->Reject("FullscreenDeniedNotHTMLSVGOrMathML");
     return;
   }
 
@@ -17720,8 +17782,13 @@ void Document::ReportLCP() {
     return;
   }
 
-  mozilla::glean::perf::largest_contentful_paint.AccumulateRawDuration(
-      lcpTime - timing->GetNavigationStartTimeStamp());
+  // NOTE: lcpTime is subject to precision reduction (for anti-fingerprinting
+  // reasons) and so subtractions against 'earlier' timestamps could
+  // unexpectedly result in negative durations, hence the use of std::max().
+
+  const TimeStamp navStart = timing->GetNavigationStartTimeStamp();
+  const TimeDuration lcp = std::max(lcpTime - navStart, TimeDuration::Zero());
+  mozilla::glean::perf::largest_contentful_paint.AccumulateRawDuration(lcp);
 
   if (!GetChannel()) {
     return;
@@ -17735,20 +17802,20 @@ void Document::ReportLCP() {
   TimeStamp responseStart;
   timedChannel->GetResponseStart(&responseStart);
 
-  if (!responseStart) {
-    // This happens when getting a response from the cache.
-    mozilla::glean::perf::largest_contentful_paint_from_response_start
-        .AccumulateRawDuration(lcpTime - timing->GetNavigationStartTimeStamp());
-  } else {
-    mozilla::glean::perf::largest_contentful_paint_from_response_start
-        .AccumulateRawDuration(lcpTime - responseStart);
-  }
+  // responseStart can be "null" when the entire load has been satisfied from
+  // the cache and thus there is no response from the network. In that case
+  // we'll just report the entire LCP time for
+  // largest_contentful_paint_from_response_start.
+  const TimeDuration lcpFromResponseStart =
+      responseStart ? std::max(lcpTime - responseStart, TimeDuration::Zero())
+                    : lcp;
+  mozilla::glean::perf::largest_contentful_paint_from_response_start
+      .AccumulateRawDuration(lcpFromResponseStart);
 
   if (profiler_thread_is_being_profiled_for_markers()) {
     MarkerInnerWindowId innerWindowID =
         MarkerInnerWindowIdFromDocShell(GetDocShell());
-    GetNavigationTiming()->GetSharedLcpMarkerState()->MaybeAddLCPProfilerMarker(
-        innerWindowID);
+    timing->GetSharedLcpMarkerState()->MaybeAddLCPProfilerMarker(innerWindowID);
   }
 }
 
@@ -19666,18 +19733,6 @@ Document::CreatePermissionGrantPromise(nsPIDOMWindowInner* aInnerWindow,
         p = new StorageAccessAPIHelper::StorageAccessPermissionGrantPromise::
             Private(__func__);
 
-    // Before we prompt, see if we are same-site
-    if (aFrameOnly) {
-      nsIChannel* channel = self->GetChannel();
-      if (channel) {
-        nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
-        if (!loadInfo->GetIsThirdPartyContextToTopWindow()) {
-          p->Resolve(StorageAccessAPIHelper::eAllow, __func__);
-          return p;
-        }
-      }
-    }
-
     RefPtr<PWindowGlobalChild::GetStorageAccessPermissionPromise> promise;
     // Test the permission
     MOZ_ASSERT(XRE_IsContentProcess());
@@ -19945,6 +20000,25 @@ already_AddRefed<mozilla::dom::Promise> Document::RequestStorageAccess(
     return promise.forget();
   }
   RefPtr<Document> self(this);
+
+  // ABA case: the document is in a third-party context chain but is same-site
+  // to the top window. No additional storage permission is needed, but we still
+  // set the in-memory UsingStorageAccess flag so hasStorageAccess() returns
+  // true after this call.
+  if (mChannel) {
+    nsCOMPtr<nsILoadInfo> loadInfo = mChannel->LoadInfo();
+    if (!loadInfo->GetIsThirdPartyContextToTopWindow()) {
+      inner->SaveStorageAccessPermissionGranted()->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [promise] { promise->MaybeResolveWithUndefined(); },
+          [promise, self] {
+            self->ConsumeTransientUserGestureActivation();
+            promise->MaybeRejectWithNotAllowedError(
+                "requestStorageAccess not allowed"_ns);
+          });
+      return promise.forget();
+    }
+  }
 
   // Step 5. Start an async call to request storage access. This will either
   // perform an automatic decision or notify the user, then perform some follow

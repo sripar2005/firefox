@@ -284,7 +284,6 @@ class nsFrameSelection final {
                                           FocusMode aFocusMode,
                                           CaretAssociationHint aHint);
 
- public:
   [[nodiscard]] bool IsAvailable() const {
     // mDomSelections is initialized at construction and cleared if the cycle
     // collector unlink them so that if the first selection is available, the
@@ -379,7 +378,6 @@ class nsFrameSelection final {
    */
   nsresult SelectCellElement(nsIContent* aCell);
 
- public:
   /**
    * Remove cells from selection inside of the given cell range.
    *
@@ -973,6 +971,18 @@ class nsFrameSelection final {
   // Table selection support.
   static nsITableCellLayout* GetCellLayout(const nsIContent* aCellContent);
 
+  /**
+   * Called when eFocus event of aDocument will be dispatched to the DOM.
+   */
+  static void WillFocusDocument(mozilla::PresShell& aPresShell,
+                                mozilla::dom::Document& aDocument);
+
+  /**
+   * Called when eBlur event of aDocument will be dispatched to the DOM.
+   */
+  static void WillBlurDocument(mozilla::PresShell& aPresShell,
+                               mozilla::dom::Document& aDocument);
+
  private:
   ~nsFrameSelection();
 
@@ -1393,6 +1403,10 @@ struct LimitersAndCaretData {
   using Element = dom::Element;
 
   LimitersAndCaretData() = default;
+  MOZ_IMPLICIT LimitersAndCaretData(const LimitersAndCaretData&) = default;
+  LimitersAndCaretData(LimitersAndCaretData&&) = default;
+  LimitersAndCaretData& operator=(const LimitersAndCaretData&) = default;
+  LimitersAndCaretData& operator=(LimitersAndCaretData&&) = default;
   explicit LimitersAndCaretData(const nsFrameSelection& aFrameSelection)
       : mIndependentSelectionRootElement(
             aFrameSelection.GetIndependentSelectionRootElement()),

@@ -712,6 +712,8 @@ class Document : public nsINode,
   virtual void SetSuppressParserErrorConsoleMessages(bool aSuppress) {}
   virtual bool SuppressParserErrorConsoleMessages() { return false; }
 
+  NS_IMPL_FROMNODE_HELPER(Document, IsDocument())
+
   // nsINode
   void InsertChildBefore(
       nsIContent* aKid, nsIContent* aBeforeThis, bool aNotify, ErrorResult& aRv,
@@ -1100,7 +1102,11 @@ class Document : public nsINode,
     //   are completing the initial about:blank load
     // - and Document::EndLoad was already called, so the method is almost done
     //   (we're likely called from there right now).
-    return InitialAboutBlankLoadCompleting() && !IsExpectingEndLoad();
+    // - and we are the initial document that should load sync. Specifically,
+    //   we are not IsInitialButExplicitlyOpened (bug 2041104).
+    bool ret = InitialAboutBlankLoadCompleting() && !IsExpectingEndLoad() &&
+               IsInitialDocument();
+    return ret;
   }
 
   void SetLoadedAsData(bool aLoadedAsData, bool aConsiderForMemoryReporting);
@@ -3642,6 +3648,12 @@ class Document : public nsINode,
     return !GetFullscreenError(aCallerType);
   }
 
+  // Picture-in-Picture API
+  bool PictureInPictureEnabled();
+  Element* GetPictureInPictureElementInternal() const;
+  void SetPictureInPictureElement(Element* aElement);
+  already_AddRefed<Promise> ExitPictureInPicture(ErrorResult& aRv);
+
   void GetWireframeWithoutFlushing(bool aIncludeNodes, Nullable<Wireframe>&);
 
   MOZ_CAN_RUN_SCRIPT void GetWireframe(bool aIncludeNodes,
@@ -4543,6 +4555,9 @@ class Document : public nsINode,
   static void GetAllInProcessDocuments(
       nsTArray<RefPtr<Document>>& aAllDocuments);
 
+  // Returns true if the document's principals's scheme is "about".
+  bool IsAboutPage() const;
+
  protected:
   // Returns the WindowContext for the document that we will contribute
   // page use counters to.
@@ -4556,9 +4571,6 @@ class Document : public nsINode,
   void EnsureOnloadBlocker();
 
   void SendToConsole(nsCOMArray<nsISecurityConsoleMessage>& aMessages);
-
-  // Returns true if the scheme for the url for this document is "about".
-  bool IsAboutPage() const;
 
   bool ContainsEMEContent();
   bool ContainsMSEContent();
@@ -5519,6 +5531,9 @@ class Document : public nsINode,
   // mAnonymousContents roots. It's a NAC root, child of the root element.
   RefPtr<Element> mCustomContentContainer;
 
+  // Picture-in-Picture API: tracks the current PiP element
+  RefPtr<Element> mPictureInPictureElement;
+
   uint32_t mBlockDOMContentLoaded;
 
   // Our live MediaQueryLists
@@ -5850,8 +5865,8 @@ class Document : public nsINode,
   // Collection of data used by the pageload event.
   PageloadEventData mPageloadEventData;
 
-  // Record page load telemetry
-  void RecordPageLoadEventTelemetry();
+  // Submit the page load event at the end of the document's lifetime.
+  void ReportPageLoadEvent();
 
   // Accumulate JS telemetry collected
   void AccumulateJSTelemetry();

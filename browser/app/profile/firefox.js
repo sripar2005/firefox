@@ -326,6 +326,10 @@ pref("browser.startup.preXulSkeletonUI", true);
 pref("browser.startup.windowsLaunchOnLogin.enabled", true);
 // Whether to show the launch on login infobar notification
 pref("browser.startup.windowsLaunchOnLogin.disableLaunchOnLoginPrompt", false);
+// Whether new installs should default to launching Firefox on Windows login.
+// Set to false by DefaultWindowsLaunchOnLogin.applyExperimentOverride when
+// Nimbus opts users out. Read by StartupOSIntegration on first run.
+pref("browser.startup.windowsLaunchOnLogin.defaultEnabled", true);
 #endif
 
 // Show an upgrade dialog on major upgrades.
@@ -444,8 +448,8 @@ pref("browser.urlbar.deduplication.thresholdDays", 0);
 pref("browser.urlbar.scotchBonnet.enableOverride", true);
 
 pref("browser.urlbar.trustPanel.featureGate", true);
-pref("browser.urlbar.trustPanel.breachAlerts.featureGate", false);
-pref("browser.urlbar.trustPanel.breachAlerts", false);
+pref("browser.urlbar.trustPanel.breachAlerts.featureGate", true);
+pref("browser.urlbar.trustPanel.breachAlerts", true);
 
 // Whether or not Unified Search Button is shown always.
 pref("browser.urlbar.unifiedSearchButton.always", false);
@@ -717,6 +721,14 @@ pref("places.semanticHistory.featureGate", true);
 pref("places.semanticHistory.featureGate", false);
 #endif
 pref("places.semanticHistory.supportedRegions", "[[\"AU\",[\"en-*\"]],[\"CA\",[\"en-*\"]],[\"GB\",[\"en-*\"]],[\"IE\",[\"en-*\"]],[\"NZ\",[\"en-*\"]],[\"PH\",[\"en-*\"]],[\"US\",[\"en-*\"]]]");
+
+// Embedding family used by Places semantic history. "static" or "contextual".
+// Settable via Nimbus (semanticHistoryEmbeddingType).
+pref("places.semanticHistory.embeddingType", "static");
+
+// Dev / debug overrides for the contextual engine. Not exposed via Nimbus.
+pref("browser.ml.embedGen.textEmbeddingSize", 384);
+pref("browser.ml.embedGen.textEmbeddingFeatureModel", "");
 
 // Minimum length threshold for semantic history search
 pref("browser.urlbar.suggest.semanticHistory.minLength", 5);
@@ -1814,10 +1826,10 @@ pref("browser.partnerlink.campaign.topsites", "amzn_2020_a1");
 // Activates preloading of the new tab url.
 pref("browser.newtab.preload", true);
 
-// Preonboarding is disabled by default on Linux.
-// For official Mozilla distributions, enable at runtime through
-// Policy.isEligibleOnLinux() in TelemetryReportingPolicy.
-#ifdef XP_LINUX
+// Preonboarding is disabled by default on platforms other than Windows and
+// macOS. For official Mozilla distributions (only for Linux), enabled at
+// runtime in TelemetryReportingPolicy.
+#if !defined(XP_WIN) && !defined(XP_MACOSX)
   pref("browser.preonboarding.enabled", false);
 #endif
 
@@ -1869,10 +1881,10 @@ pref("browser.newtabpage.activity-stream.images.smart", true);
 pref("browser.newtabpage.activity-stream.weather.locationSearchEnabled", true);
 
 // List of regions that get weather by default.
-pref("browser.newtabpage.activity-stream.discoverystream.region-weather-config", "US,CA");
+pref("browser.newtabpage.activity-stream.discoverystream.region-weather-config", "AT,BE,BG,CA,CH,CY,CZ,DE,DK,EE,ES,FI,FR,GB,GR,HR,HU,IE,IS,IT,LI,LT,LV,MT,NL,NO,PL,PT,RO,SE,SI,SK,US");
 
 // List of locales that weather widget supports.
-pref("browser.newtabpage.activity-stream.discoverystream.locale-weather-config", "en-US,en-GB,en-CA");
+pref("browser.newtabpage.activity-stream.discoverystream.locale-weather-config", "bg,cs,da,de,el,en-CA,en-GB,en-US,es-ES,et,fi,fr,hr,hu,is,it,lv,nb-NO,nl,pl,pt-PT,ro,sk,sl,sv-SE,tr");
 
 // Promo card visibility
 pref("browser.newtabpage.activity-stream.discoverystream.promoCard.visible", true);
@@ -2200,6 +2212,7 @@ pref("sidebar.old-sidebar.has-used", false);
 pref("sidebar.new-sidebar.has-used", false);
 pref("sidebar.history.sortOption", "date");
 pref("sidebar.updatedBookmarks.enabled", false);
+pref("sidebar.openTabsPanel.enabled", false);
 
 pref("sidebar.notification.badge.aichat", false);
 
@@ -2240,9 +2253,7 @@ pref("browser.ml.linkPreview.supportedLocales", "en");
 pref("browser.ml.pageAssist.enabled", false);
 
 // Smart Window Feature
-pref("browser.smartwindow.apiKey", '');
 pref("browser.smartwindow.enabled", false);
-pref("browser.smartwindow.endpoint", "https://mlpa-prod-prod-mozilla.global.ssl.fastly.net/v1");
 pref("browser.smartwindow.memories.generateFromHistory", true);
 pref("browser.smartwindow.memories.generateFromConversation", true);
 pref("browser.smartwindow.memories.hasSeenMemories", false);
@@ -2252,9 +2263,6 @@ pref("browser.smartwindow.firstrun.hasCompleted", false);
 pref("browser.smartwindow.showThemesNotice", true);
 pref("browser.smartwindow.sidebar.openByDefault", true);
 pref("browser.smartwindow.isDefaultWindow", false);
-pref("browser.smartwindow.firstrun.modelChoice", "");
-pref("browser.smartwindow.model", "");
-pref("browser.smartwindow.preferences.endpoint", "");
 pref("browser.smartwindow.firstrun.explainerURL", "https://www.firefox.com/en-US/smart-window/?v=product");
 pref("places.semanticHistory.smartwindow.featureGate", false);
 // Allow markdown tables in Smart Window responses
@@ -2271,9 +2279,6 @@ pref("browser.smartwindow.chatHistory.loglevel", "Error");
 pref("browser.smartwindow.chatStore.loglevel", "Error");
 pref("browser.smartwindow.conversation.logLevel", "Error");
 pref("browser.smartwindow.smartbarMentions.loglevel", "Error");
-
-// Smart Window user feedback collection
-pref("browser.smartwindow.userFeedbackCollection", false);
 
 // Block insecure active content on https pages
 pref("security.mixed_content.block_active_content", true);
@@ -2389,12 +2394,7 @@ pref("media.videocontrols.picture-in-picture.enable-when-switching-tabs.enabled"
 pref("media.videocontrols.picture-in-picture.auto-close.enabled", true);
 pref("media.videocontrols.picture-in-picture.auto-close.timeoutMs", 1000);
 
-#ifdef NIGHTLY_BUILD
-  pref("media.contextmenu.video-overlay-detection", true);
-#else
-  pref("media.contextmenu.video-overlay-detection", false);
-#endif
-
+pref("media.contextmenu.video-overlay-detection", true);
 // TODO (Bug 1817084) - This pref is used for managing translation preferences
 // in the Firefox Translations addon. It should be removed when the addon is
 // removed.
@@ -2432,10 +2432,10 @@ pref("toolkit.telemetry.bhrPing.enabled", true);
 // Enable GMP support in the addon manager.
 pref("media.gmp-provider.enabled", true);
 
-// Enable Dynamic First-Party Isolation by default (BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN).
+// Enable Dynamic First-Party Isolation by default (BEHAVIOR_PARTITION_FOREIGN).
 pref("network.cookie.cookieBehavior", 5);
 
-// Enable Dynamic First-Party Isolation in the private browsing mode (BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN).
+// Enable Dynamic First-Party Isolation in the private browsing mode (BEHAVIOR_PARTITION_FOREIGN).
 pref("network.cookie.cookieBehavior.pbmode", 5);
 
 // Enable harmful addon URL blocking by default for all channels, only on desktop.
@@ -2457,7 +2457,7 @@ pref("privacy.query_stripping.strip_on_share.enabled", true);
 
 pref("browser.contentblocking.cryptomining.preferences.ui.enabled", true);
 pref("browser.contentblocking.fingerprinting.preferences.ui.enabled", true);
-// Enable cookieBehavior = BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN as an option in the custom category ui
+// Enable cookieBehavior = BEHAVIOR_PARTITION_FOREIGN as an option in the custom category ui
 pref("browser.contentblocking.reject-and-isolate-cookies.preferences.ui.enabled", true);
 
 // Possible values for browser.contentblocking.features.strict pref:
@@ -2515,14 +2515,14 @@ pref("browser.contentblocking.reject-and-isolate-cookies.preferences.ui.enabled"
 //     "cookieBehavior2": cookie behaviour BEHAVIOR_REJECT
 //     "cookieBehavior3": cookie behaviour BEHAVIOR_LIMIT_FOREIGN
 //     "cookieBehavior4": cookie behaviour BEHAVIOR_REJECT_TRACKER
-//     "cookieBehavior5": cookie behaviour BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
+//     "cookieBehavior5": cookie behaviour BEHAVIOR_PARTITION_FOREIGN
 //   Cookie behavior for private windows:
 //     "cookieBehaviorPBM0": cookie behaviour BEHAVIOR_ACCEPT
 //     "cookieBehaviorPBM1": cookie behaviour BEHAVIOR_REJECT_FOREIGN
 //     "cookieBehaviorPBM2": cookie behaviour BEHAVIOR_REJECT
 //     "cookieBehaviorPBM3": cookie behaviour BEHAVIOR_LIMIT_FOREIGN
 //     "cookieBehaviorPBM4": cookie behaviour BEHAVIOR_REJECT_TRACKER
-//     "cookieBehaviorPBM5": cookie behaviour BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
+//     "cookieBehaviorPBM5": cookie behaviour BEHAVIOR_PARTITION_FOREIGN
 //   Third-party cookie deprecation behavior:
 //     "3pcd": Third-party cookie deprecation enabled
 //     "-3pcd": Third-party cookie deprecation disabled
@@ -2541,9 +2541,6 @@ pref("browser.contentblocking.report.lockwise.enabled", true);
 // Disable rotections report's Monitor card by default. The new Monitor API does
 // not support this feature as of now. See Bug 1815751.
 pref("browser.contentblocking.report.monitor.enabled", false);
-
-// Disable Protections report's Proxy card by default.
-pref("browser.contentblocking.report.proxy.enabled", false);
 
 // Enable Protections report's Privacy Metrics card on Nightly only.
 #ifdef NIGHTLY_BUILD
@@ -2593,7 +2590,6 @@ pref("browser.contentblocking.report.monitor.preferences_url", "https://monitor.
 pref("browser.contentblocking.report.monitor.home_page_url", "https://monitor.firefox.com/user/dashboard");
 pref("browser.contentblocking.report.manage_devices.url", "https://accounts.firefox.com/settings/clients");
 pref("browser.contentblocking.report.endpoint_url", "https://monitor.firefox.com/user/breach-stats?includeResolved=true");
-pref("browser.contentblocking.report.proxy_extension.url", "https://fpn.firefox.com/browser?utm_source=firefox-desktop&utm_medium=referral&utm_campaign=about-protections&utm_content=about-protections");
 pref("browser.contentblocking.report.mobile-ios.url", "https://apps.apple.com/app/firefox-private-safe-browser/id989804926");
 pref("browser.contentblocking.report.mobile-android.url", "https://play.google.com/store/apps/details?id=org.mozilla.firefox&referrer=utm_source%3Dprotection_report%26utm_content%3Dmobile_promotion");
 pref("browser.contentblocking.report.vpn.url", "https://vpn.mozilla.org/?utm_source=firefox-browser&utm_medium=firefox-browser&utm_campaign=about-protections-card");
@@ -3492,8 +3488,13 @@ pref("browser.backup.enabled", true);
 pref("browser.backup.scheduled.enabled", false);
 
 // Prefs to control visibility and usability of the create backup and restore from backup features.
-pref("browser.backup.archive.enabled", true);
-pref("browser.backup.restore.enabled", true);
+#ifndef XP_MACOSX
+  pref("browser.backup.archive.enabled", true);
+  pref("browser.backup.restore.enabled", true);
+#else
+  pref("browser.backup.archive.enabled", false);
+  pref("browser.backup.restore.enabled", false);
+#endif
 
 // The number of SQLite database pages to backup per step.
 pref("browser.backup.sqlite.pages_per_step", 50);
@@ -3615,9 +3616,6 @@ pref("widget.support-xdg-config", true, locked);
 
 // A preference that enables Content Sharing
 pref("browser.contentsharing.enabled", false);
-
-// Controls whether the "New" badge is shown on the content sharing menu items
-pref("browser.contentsharing.newBadge.enabled", true);
 
 // When enabled, Firefox ignores the distribution.ini file if global.id is MozillaOnline.
 pref("distribution.mozillaonline.ignore", true);

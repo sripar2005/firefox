@@ -367,9 +367,7 @@ struct BufferChunk
     : public ChunkBase,
       public SlimLinkedListElement<BufferChunk>,
       public AllocSpace<BufferChunk, ChunkSize, MediumAllocGranularity> {
-#ifdef DEBUG
   MainThreadOrGCTaskData<Zone*> zone;
-#endif
 
   MainThreadOrGCTaskData<bool> allocatedDuringCollection;
   MainThreadOrGCTaskData<bool> hasNurseryOwnedAllocs;
@@ -394,6 +392,10 @@ struct BufferChunk
   // use.
   MainThreadOrGCTaskData<BufferAllocator::FreeLists> freeLists;
   MainThreadOrGCTaskData<bool> ownsFreeLists;
+
+  // Total free bytes immediately after sweep, used to bucket swept chunks by
+  // fragmentation. Not maintained once the chunk is used for allocation.
+  MainThreadOrGCTaskData<size_t> freeBytesAfterSweep;
 
   using SmallRegionIter = BitmapToBlockIter<SmallRegionBitmap::Iter,
                                             SmallRegionSize, SmallBufferRegion>;
@@ -508,10 +510,8 @@ struct LargeBuffer : public SlimLinkedListElement<LargeBuffer> {
 
   void check() const { MOZ_ASSERT(checkValue == LargeBufferCheckValue); }
 
-#ifdef DEBUG
   inline Zone* zone();
   inline Zone* zoneFromAnyThread();
-#endif
 
   void* data() { return alloc; }
   size_t allocBytes() const { return bytes; }

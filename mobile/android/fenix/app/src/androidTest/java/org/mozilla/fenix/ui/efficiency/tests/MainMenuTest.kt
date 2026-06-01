@@ -8,17 +8,18 @@ import org.junit.Ignore
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
-import org.mozilla.fenix.helpers.TestHelper.exitMenu
+import org.mozilla.fenix.helpers.TestAssetHelper.pdfFormAsset
 import org.mozilla.fenix.ui.efficiency.helpers.BaseTest
 import org.mozilla.fenix.ui.efficiency.selectors.BookmarksSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.BookmarksSelectors.DELETE_BOOKMARK_BUTTON
 import org.mozilla.fenix.ui.efficiency.selectors.BrowserPageSelectors
+import org.mozilla.fenix.ui.efficiency.selectors.HistorySelectors.NAVIGATE_BACK_BUTTON
 import org.mozilla.fenix.ui.efficiency.selectors.HomeSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors
+import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors.BACK_BUTTON
 import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors.BOOKMARK_THIS_PAGE_BUTTON
 import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors.EDIT_BOOKMARK_BUTTON
-import org.mozilla.fenix.ui.robots.browserScreen
-import org.mozilla.fenix.ui.robots.navigationToolbar
+import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors.FORWARD_BUTTON
 
 class MainMenuTest : BaseTest() {
 
@@ -110,5 +111,83 @@ class MainMenuTest : BaseTest() {
         on.browserPage.navigateToPage()
         on.mainMenu.navigateToPage()
             .mozVerify(BOOKMARK_THIS_PAGE_BUTTON)
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080136
+    @SmokeTest
+    @Test
+    fun verifyTheHistoryMenuItemTest() {
+        val testPage = mockWebServer.getGenericAsset(1)
+
+        on.browserPage.navigateToPage(testPage.url.toString())
+        on.history.navigateToPage()
+            .mozVerifyElementsByGroup("historyMenuViewWithHistoryItems")
+            .mozClick(NAVIGATE_BACK_BUTTON)
+        on.browserPage
+            .verifyPageContent(testPage.content)
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080133
+    @SmokeTest
+    @Test
+    fun verifySwitchToDesktopSiteIsDisabledOnPDFsTest() {
+        val pdfPage = mockWebServer.pdfFormAsset
+
+        on.browserPage.navigateToPage(pdfPage.url.toString())
+        on.mainMenu.navigateToPage()
+            .mozVerifyElementIsNotEnabled(MainMenuSelectors.DESKTOP_SITE_BUTTON)
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080139
+    @SmokeTest
+    @Test
+    fun verifyThePasswordsMenuItemTest() {
+        val testPage = mockWebServer.getGenericAsset(1)
+
+        on.browserPage.navigateToPage(testPage.url.toString())
+        on.settingsSavedPasswords.navigateToPage()
+            .mozVerifyElementsByGroup("emptySavedPasswordsList")
+        on.browserPage.navigateToPage()
+            .verifyPageContent(testPage.content)
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080126
+    @SmokeTest
+    @Test
+    fun verifyTheMainMenuForwardButtonTest() {
+        val firstWebPage = mockWebServer.getGenericAsset(1)
+        val nextWebPage = mockWebServer.getGenericAsset(2)
+
+        on.browserPage
+            .navigateToPage(firstWebPage.url.toString())
+            .verifyUrl(firstWebPage.url.toString())
+            .navigateToPage(nextWebPage.url.toString(), forceNavigation = true)
+            .verifyUrl(nextWebPage.url.toString())
+        on.mainMenu.navigateToPage()
+            .mozClick(BACK_BUTTON)
+        on.browserPage.navigateToPage()
+            .verifyUrl(firstWebPage.url.toString())
+        on.mainMenu.navigateToPage()
+            .mozClick(FORWARD_BUTTON)
+        on.browserPage.navigateToPage()
+            .verifyUrl(nextWebPage.url.toString())
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080125
+    @SmokeTest
+    @Test
+    fun verifyTheMainMenuBackButtonTest() {
+        val firstWebPage = mockWebServer.getGenericAsset(1)
+        val nextWebPage = mockWebServer.getGenericAsset(2)
+
+        on.browserPage
+            .navigateToPage(firstWebPage.url.toString())
+            .verifyUrl(firstWebPage.url.toString())
+            .navigateToPage(nextWebPage.url.toString(), forceNavigation = true)
+            .verifyUrl(nextWebPage.url.toString())
+        on.mainMenu.navigateToPage()
+            .mozClick(BACK_BUTTON)
+        on.browserPage.navigateToPage()
+            .verifyUrl(firstWebPage.url.toString())
     }
 }

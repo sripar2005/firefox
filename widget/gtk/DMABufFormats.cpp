@@ -81,8 +81,8 @@ class DMABufFormatTable final {
   void Set(int32_t aFd, uint32_t aSize) {
     MOZ_DIAGNOSTIC_ASSERT(!mData && !mSize);
     mSize = aSize;
-    mData =
-        (DRMFormatTableEntry*)mmap(NULL, aSize, PROT_READ, MAP_PRIVATE, aFd, 0);
+    mData = (DRMFormatTableEntry*)mmap(nullptr, aSize, PROT_READ, MAP_PRIVATE,
+                                       aFd, 0);
     close(aFd);
   }
 
@@ -423,7 +423,7 @@ RefPtr<DMABufFormats> CreateDMABufFeedbackFormats(
   if (!WaylandDisplayGet()->HasDMABufFeedback()) {
     return nullptr;
   }
-  RefPtr<DMABufFormats> formats = new DMABufFormats();
+  auto formats = MakeRefPtr<DMABufFormats>();
   formats->InitFeedback(WaylandDisplayGet()->GetDmabuf(), aFormatRefreshCB,
                         aSurface);
   return formats.forget();

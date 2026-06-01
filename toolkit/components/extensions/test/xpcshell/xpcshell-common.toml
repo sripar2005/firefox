@@ -145,6 +145,8 @@ skip-if = [
   "os == 'win'", # Bug 1762638
 ]
 
+["test_ext_contentscript_adoptedStyleSheets.js"]
+
 ["test_ext_contentscript_antitracking.js"]
 
 ["test_ext_contentscript_api_injection.js"]
@@ -878,10 +880,6 @@ skip-if = [
 ["test_ext_webRequest_type_json.js"]
 
 ["test_ext_webRequest_type_text.js"]
-prefs = ["javascript.options.experimental.import_text=true"]
-skip-if = [
-  "!nightly_build",
-]
 
 ["test_ext_webRequest_userContextId.js"]
 

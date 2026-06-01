@@ -220,6 +220,14 @@ export const INITIAL_STATE = {
     // Per-tab "Only followed teams" filter toggle. Defaults to on so users
     // who follow teams see the filtered list right away.
     followedOnly: { results: true, upcoming: true },
+    watchLive: {
+      loaded: false,
+      data: null,
+    },
+    // Timestamp (ms since epoch) of the last successful live update.
+    // Kept at root so it survives WIDGETS_SPORTS_WIDGET_SET wholesale-replaces
+    // of `data` (e.g. post-match resync).
+    lastLiveUpdated: null,
   },
 };
 
@@ -1223,6 +1231,26 @@ function SportsWidget(prevState = INITIAL_STATE.SportsWidget, action) {
         ...prevState,
         followedOnly: { ...prevState.followedOnly, ...action.data },
       };
+    case at.WIDGETS_SPORTS_WATCH_LIVE_REQUEST:
+      return {
+        ...prevState,
+        watchLive: { loaded: false, data: null },
+      };
+    case at.WIDGETS_SPORTS_WATCH_LIVE_SET:
+      return {
+        ...prevState,
+        watchLive: { loaded: true, data: action.data },
+      };
+    case at.WIDGETS_SPORTS_LIVE_UPDATE: {
+      return {
+        ...prevState,
+        lastLiveUpdated: action.data?.lastLiveUpdated ?? null,
+        data: {
+          ...prevState.data,
+          live: action.data?.live ?? [],
+        },
+      };
+    }
     default:
       return prevState;
   }

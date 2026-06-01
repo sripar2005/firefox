@@ -499,7 +499,7 @@ export class FeatureCallout {
 
       case "unload":
         try {
-          this.teardownFeatureTourProgress();
+          this.endTour();
         } catch (error) {}
         break;
 
@@ -1602,10 +1602,16 @@ export class FeatureCallout {
       handleActorMessage(`AWPage:${name}`, data, this.browser);
     const telemetryMessageHandler = getActionHandler("TELEMETRY_EVENT");
     const AWSendEventTelemetry = data => {
-      if (this.config?.metrics !== "block") {
-        return telemetryMessageHandler(data);
+      if (this.config?.metrics === "block") {
+        return null;
       }
-      return null;
+      if (this.config?.write_in_microsurvey) {
+        if (!data.event_context) {
+          data.event_context = {};
+        }
+        data.event_context.write_in_microsurvey = true;
+      }
+      return telemetryMessageHandler(data);
     };
     this._windowFuncs = {
       AWGetFeatureConfig: () => this.config,
@@ -2274,6 +2280,8 @@ export class FeatureCallout {
     "color",
     "border",
     "accent-color",
+    "step-color",
+    "current-step-color",
     "button-background",
     "button-color",
     "button-border",
@@ -2308,11 +2316,13 @@ export class FeatureCallout {
     "themed-content": {
       all: {
         background:
-          "var(--newtab-background-color, var(--background-color-canvas)) linear-gradient(var(--newtab-background-color-secondary), var(--newtab-background-color-secondary))",
+          "var(--newtab-background-color, var(--background-color-canvas)) image(var(--newtab-background-color-secondary))",
         color: "var(--newtab-text-primary-color, var(--text-color))",
         border:
           "color-mix(in srgb, var(--newtab-background-color-secondary) 80%, #000)",
         "accent-color": "var(--button-background-color-primary)",
+        "step-color": "color-mix(in srgb, currentColor 50%, transparent)",
+        "current-step-color": "var(--button-background-color-primary)",
         "button-background": "color-mix(in srgb, transparent 93%, #000)",
         "button-color": "var(--newtab-text-primary-color, var(--text-color))",
         "button-border": "transparent",
@@ -2343,11 +2353,11 @@ export class FeatureCallout {
         "link-color-active": "ActiveText",
         "link-color-visited": "VisitedText",
         "dismiss-button-background":
-          "var(--newtab-background-color, var(--background-color-canvas)) linear-gradient(var(--newtab-background-color-secondary), var(--newtab-background-color-secondary))",
+          "var(--newtab-background-color, var(--background-color-canvas)) image(var(--newtab-background-color-secondary)",
         "dismiss-button-background-hover":
-          "var(--newtab-background-color, var(--background-color-canvas)) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary)))",
+          "var(--newtab-background-color, var(--background-color-canvas)) image(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary)))",
         "dismiss-button-background-active":
-          "var(--newtab-background-color, var(--background-color-canvas)) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary)), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary)))",
+          "var(--newtab-background-color, var(--background-color-canvas)) image(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary)))",
       },
       dark: {
         border:
@@ -2361,6 +2371,8 @@ export class FeatureCallout {
         color: "-moz-dialogtext",
         border: "-moz-dialogtext",
         "accent-color": "LinkText",
+        "step-color": "CanvasText",
+        "current-step-color": "CanvasText",
         "button-background": "ButtonFace",
         "button-color": "ButtonText",
         "button-border": "ButtonText",
@@ -2384,6 +2396,8 @@ export class FeatureCallout {
         color: "rgb(12, 12, 13)",
         border: "#CFCFD8",
         "accent-color": "#0A84FF",
+        "step-color": "color-mix(in srgb, currentColor 50%, transparent)",
+        "current-step-color": "#0A84FF",
         "button-background": "rgb(215, 215, 219)",
         "button-color": "rgb(12, 12, 13)",
         "button-border": "transparent",
@@ -2425,6 +2439,8 @@ export class FeatureCallout {
         color: "-moz-dialogtext",
         border: "CanvasText",
         "accent-color": "Highlight",
+        "step-color": "CanvasText",
+        "current-step-color": "CanvasText",
         "button-background": "ButtonFace",
         "button-color": "ButtonText",
         "button-border": "ButtonText",
@@ -2444,11 +2460,13 @@ export class FeatureCallout {
     newtab: {
       all: {
         background:
-          "var(--newtab-background-color, #F9F9FB) linear-gradient(var(--newtab-background-color-secondary, #FFF), var(--newtab-background-color-secondary, #FFF))",
+          "var(--newtab-background-color, #F9F9FB) image(var(--newtab-background-color-secondary, #FFF))",
         color: "var(--newtab-text-primary-color, WindowText)",
         border:
           "color-mix(in srgb, var(--newtab-background-color-secondary, #FFF) 80%, #000)",
         "accent-color": "#0061e0",
+        "step-color": "color-mix(in srgb, currentColor 50%, transparent)",
+        "current-step-color": "#0061e0",
         "button-background": "color-mix(in srgb, transparent 93%, #000)",
         "button-color": "var(--newtab-text-primary-color, WindowText)",
         "button-border": "transparent",
@@ -2465,16 +2483,18 @@ export class FeatureCallout {
         "link-color-visited": "rgb(0, 97, 224)",
         "icon-success-color": "#2AC3A2",
         "dismiss-button-background":
-          "var(--newtab-background-color, #F9F9FB) linear-gradient(var(--newtab-background-color-secondary, #FFF), var(--newtab-background-color-secondary, #FFF))",
+          "var(--newtab-background-color, #F9F9FB) image(var(--newtab-background-color-secondary, #FFF))",
         "dismiss-button-background-hover":
-          "var(--newtab-background-color, #F9F9FB) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #FFF)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #FFF)))",
+          "var(--newtab-background-color, #F9F9FB) image(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #FFF)))",
         "dismiss-button-background-active":
-          "var(--newtab-background-color, #F9F9FB) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #FFF)), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #FFF)))",
+          "var(--newtab-background-color, #F9F9FB) image(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #FFF)))",
       },
       dark: {
         "accent-color": "rgb(0, 221, 255)",
+        "step-color": "color-mix(in srgb, currentColor 50%, transparent)",
+        "current-step-color": "rgb(0, 211, 255)",
         background:
-          "var(--newtab-background-color, #2B2A33) linear-gradient(var(--newtab-background-color-secondary, #42414D), var(--newtab-background-color-secondary, #42414D))",
+          "var(--newtab-background-color, #2B2A33) image(var(--newtab-background-color-secondary, #42414D))",
         border:
           "color-mix(in srgb, var(--newtab-background-color-secondary, #42414D) 80%, #FFF)",
         "button-background": "color-mix(in srgb, transparent 80%, #000)",
@@ -2486,17 +2506,19 @@ export class FeatureCallout {
         "link-color-visited": "rgb(0, 221, 255)",
         "icon-success-color": "#54FFBD",
         "dismiss-button-background":
-          "var(--newtab-background-color, #2B2A33) linear-gradient(var(--newtab-background-color-secondary, #42414D), var(--newtab-background-color-secondary, #42414D))",
+          "var(--newtab-background-color, #2B2A33) image(var(--newtab-background-color-secondary, #42414D))",
         "dismiss-button-background-hover":
-          "var(--newtab-background-color, #2B2A33) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #42414D)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #42414D)))",
+          "var(--newtab-background-color, #2B2A33) image(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #42414D)))",
         "dismiss-button-background-active":
-          "var(--newtab-background-color, #2B2A33) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #42414D), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #42414D)))",
+          "var(--newtab-background-color, #2B2A33) image(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #42414D)))",
       },
       hcm: {
         background: "-moz-dialog",
         color: "-moz-dialogtext",
         border: "-moz-dialogtext",
         "accent-color": "SelectedItem",
+        "step-color": "CanvasText",
+        "current-step-color": "CanvasText",
         "button-background": "ButtonFace",
         "button-color": "ButtonText",
         "button-border": "ButtonText",
@@ -2523,15 +2545,16 @@ export class FeatureCallout {
     // stylesheets handle these variables' values.
     chrome: {
       all: {
-        // Use a gradient because it's possible (due to custom themes) that the
+        // Use image() because it's possible (due to custom themes) that the
         // panel-background will be semi-transparent, causing the arrow to
         // show through the callout background. Put the Menu color behind the
         // panel-background.
-        background:
-          "Menu linear-gradient(var(--panel-background-color), var(--panel-background-color))",
+        background: "Menu image(var(--panel-background-color))",
         color: "var(--panel-text-color)",
         border: "var(--panel-border-color)",
         "accent-color": "var(--focus-outline-color)",
+        "step-color": "color-mix(in srgb, currentColor 50%, transparent)",
+        "current-step-color": "var(--button-background-color-primary)",
         // Button Background
         "button-background": "var(--button-background-color)",
         "button-background-hover": "var(--button-background-color-hover)",
@@ -2576,11 +2599,11 @@ export class FeatureCallout {
         "icon-success-color": "var(--color-accent-attention)",
         // Dismiss Button
         "dismiss-button-background":
-          "Menu linear-gradient(var(--panel-background-color), var(--panel-background-color))",
+          "Menu image(var(--panel-background-color))",
         "dismiss-button-background-hover":
-          "Menu linear-gradient(color-mix(in srgb, currentColor 14%, var(--panel-background-color)))",
+          "Menu image(color-mix(in srgb, currentColor 14%, var(--panel-background-color)))",
         "dismiss-button-background-active":
-          "Menu linear-gradient(color-mix(in srgb, currentColor 21%, var(--panel-background-color)))",
+          "Menu image(color-mix(in srgb, currentColor 21%, var(--panel-background-color)))",
       },
       hcm: {
         background: "var(--panel-background-color)",
@@ -2589,6 +2612,8 @@ export class FeatureCallout {
           "color-mix(in srgb, currentColor 14%, SelectedItem)",
         "dismiss-button-background-active":
           "color-mix(in srgb, currentColor 21%, SelectedItem)",
+        "step-color": "var(--text-color, CanvasText)",
+        "current-step-color": "var(--text-color, CanvasText)",
       },
     },
   };

@@ -538,6 +538,9 @@ skip-if = [
 
 ["test_content_decoding_error_telemetry.js"]
 run-sequentially = ["true"]
+skip-if = [
+  "artifact", # Bug 2040417 - known limitation of FOG ping testing APIs
+]
 
 ["test_content_encoding_gzip.js"]
 
@@ -720,6 +723,13 @@ skip-if = [
 ["test_h2proxy_connection_limit.js"]
 run-sequentially = ["true"] # node server exceptions dont replay well
 
+["test_happy_eyeballs_0rtt_abandoned_requeueed.js"]
+run-sequentially = ["true"] # TlsServer listens to the same port
+skip-if = [
+  "os == 'android'",
+  "os == 'win'",
+]
+
 ["test_happy_eyeballs_0rtt_fallback.js"]
 run-sequentially = ["true"] # TlsServer listens to the same port
 skip-if = [
@@ -728,13 +738,6 @@ skip-if = [
 ]
 
 ["test_happy_eyeballs_0rtt_h1_reject.js"]
-run-sequentially = ["true"] # TlsServer listens to the same port
-skip-if = [
-  "os == 'android'",
-  "os == 'win'",
-]
-
-["test_happy_eyeballs_0rtt_abandoned_requeueed.js"]
 run-sequentially = ["true"] # TlsServer listens to the same port
 skip-if = [
   "os == 'android'",
@@ -1468,6 +1471,11 @@ skip-if = [
   "socketprocess_networking", # Bug 1614708
 ]
 
+["test_proxyconnect_headers.js"]
+skip-if = [
+  "socketprocess_networking", # Bug 1614708
+]
+
 ["test_proxyconnect_https.js"]
 skip-if = [
   "socketprocess_networking", # Bug 1614708
@@ -1620,6 +1628,19 @@ run-sequentially = ["true"] # tlsserver uses fixed port; profile dir must be exc
 # network.ssl_tokens_cache_persistence must be set here (before xpcshell
 # initialises the IO service and SSLTokensCache::Init runs) rather than
 # in the test add_setup.
+prefs = [
+  "network.ssl_tokens_cache_persistence=true",
+  "logging.SSLTokensCache=5",
+  "logging.config.sync=true",
+]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && msix", # Bug 2034343
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && msix", # Bug 2034343
+]
+
+["test_ssl_token_cache_persist_disabled.js"]
+run-sequentially = ["true"] # tlsserver uses fixed port; profile dir must be exclusive
+# Init() sees pref=true; the test flips it to false before profile-after-change.
 prefs = [
   "network.ssl_tokens_cache_persistence=true",
   "logging.SSLTokensCache=5",

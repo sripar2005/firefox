@@ -21,31 +21,9 @@
  */
 
 /**
- * pdfjsVersion = 6.0.135
- * pdfjsBuild = 00af75905
+ * pdfjsVersion = 6.0.229
+ * pdfjsBuild = 145feeaa3
  */
-/******/ // The require scope
-/******/ var __webpack_require__ = {};
-/******/ 
-/************************************************************************/
-/******/ /* webpack/runtime/define property getters */
-/******/ (() => {
-/******/ 	// define getter functions for harmony exports
-/******/ 	__webpack_require__.d = (exports, definition) => {
-/******/ 		for(var key in definition) {
-/******/ 			if(__webpack_require__.o(definition, key) && !__webpack_require__.o(exports, key)) {
-/******/ 				Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
-/******/ 			}
-/******/ 		}
-/******/ 	};
-/******/ })();
-/******/ 
-/******/ /* webpack/runtime/hasOwnProperty shorthand */
-/******/ (() => {
-/******/ 	__webpack_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
-/******/ })();
-/******/ 
-/************************************************************************/
 
 ;// ./src/shared/util.js
 const isNodeJS = false;
@@ -67,12 +45,12 @@ const RenderingIntentFlag = {
   IS_EDITING: 0x80,
   OPLIST: 0x100
 };
-const AnnotationMode = {
+const AnnotationMode = (/* unused pure expression or super */ null && ({
   DISABLE: 0,
   ENABLE: 1,
   ENABLE_FORMS: 2,
   ENABLE_STORAGE: 3
-};
+}));
 const AnnotationPrefix = "pdfjs_internal_id_";
 const AnnotationEditorPrefix = "pdfjs_internal_editor_";
 const AnnotationEditorType = {
@@ -86,7 +64,7 @@ const AnnotationEditorType = {
   SIGNATURE: 101,
   COMMENT: 102
 };
-const AnnotationEditorParamsType = {
+const AnnotationEditorParamsType = (/* unused pure expression or super */ null && ({
   RESIZE: 1,
   CREATE: 2,
   FREETEXT_SIZE: 11,
@@ -101,7 +79,7 @@ const AnnotationEditorParamsType = {
   HIGHLIGHT_FREE: 33,
   HIGHLIGHT_SHOW_ALL: 34,
   DRAW_STEP: 41
-};
+}));
 const PermissionFlag = {
   PRINT: 0x04,
   MODIFY_CONTENTS: 0x08,
@@ -733,7 +711,7 @@ let NormalizeRegex = null;
 let NormalizationMap = null;
 function normalizeUnicode(str) {
   if (!NormalizeRegex) {
-    NormalizeRegex = /([\u00a0\u00b5\u037e\u0eb3\u2000-\u200a\u202f\u2126\ufb00-\ufb04\ufb06\ufb20-\ufb36\ufb38-\ufb3c\ufb3e\ufb40-\ufb41\ufb43-\ufb44\ufb46-\ufba1\ufba4-\ufba9\ufbae-\ufbb1\ufbd3-\ufbdc\ufbde-\ufbe7\ufbea-\ufbf8\ufbfc-\ufbfd\ufc00-\ufc5d\ufc64-\ufcf1\ufcf5-\ufd3d\ufd88\ufdf4\ufdfa-\ufdfb\ufe71\ufe77\ufe79\ufe7b\ufe7d]+)|(\ufb05+)/gu;
+    NormalizeRegex = /([\u00a0\u00b5\u037e\u0eb3\u2000-\u200a\u202f\u2126\ufb00-\ufb04\ufb06\ufb20-\ufb36\ufb38-\ufb3c\ufb3e\ufb40\ufb41\ufb43\ufb44\ufb46-\ufba1\ufba4-\ufba9\ufbae-\ufbb1\ufbd3-\ufbdc\ufbde-\ufbe7\ufbea-\ufbf8\ufbfc\ufbfd\ufc00-\ufc5d\ufc64-\ufcf1\ufcf5-\ufd3d\ufd88\ufdf4\ufdfa\ufdfb\ufe71\ufe77\ufe79\ufe7b\ufe7d]+)|(\ufb05+)/gu;
     NormalizationMap = new Map([["ﬅ", "ſt"]]);
   }
   return str.replaceAll(NormalizeRegex, (_, p1, p2) => p1 ? p1.normalize("NFKC") : NormalizationMap.get(p2));
@@ -1610,7 +1588,7 @@ function validateFontName(fontFamily, mustWarn = false) {
     }
   } else {
     for (const ident of fontFamily.split(/[ \t]+/)) {
-      if (/^(\d|(-(\d|-)))/.test(ident) || !/^[\w-\\]+$/.test(ident)) {
+      if (/^(?:\d|-[\d-])/.test(ident) || !/^[\w\\-]+$/.test(ident)) {
         if (mustWarn) {
           warn(`FontFamily contains invalid <custom-ident>: ${fontFamily}.`);
         }
@@ -11576,12 +11554,12 @@ class Parser {
     if (lexer.beginInlineImagePos !== -1) {
       dictLength = stream.pos - lexer.beginInlineImagePos;
     }
-    const filter = this.xref.fetchIfRef(dictMap.F || dictMap.Filter);
+    const filter = this.#fetchIfRef(dictMap.F || dictMap.Filter);
     let filterName;
     if (filter instanceof Name) {
       filterName = filter.name;
     } else if (Array.isArray(filter)) {
-      const filterZero = this.xref.fetchIfRef(filter[0]);
+      const filterZero = this.#fetchIfRef(filter[0]);
       if (filterZero instanceof Name) {
         filterName = filterZero.name;
       }
@@ -11623,10 +11601,10 @@ class Parser {
       dict.set(key, dictMap[key]);
     }
     let imageStream = stream.makeSubStream(startPos, length, dict);
-    if (cipherTransform) {
+    if (cipherTransform && !this.#hasCryptFilter(filter)) {
       imageStream = cipherTransform.createStream(imageStream, length);
     }
-    imageStream = this.filter(imageStream, dict, length);
+    imageStream = this.filter(imageStream, dict, length, cipherTransform);
     imageStream.dict = dict;
     if (cacheKey !== undefined) {
       imageStream.cacheKey = `inline_img_${++this._imageId}`;
@@ -11635,6 +11613,20 @@ class Parser {
     this.buf2 = Cmd.get("EI");
     this.shift();
     return imageStream;
+  }
+  #fetchIfRef(obj) {
+    return this.xref ? this.xref.fetchIfRef(obj) : obj;
+  }
+  #hasCryptFilter(filter) {
+    if (!Array.isArray(filter)) {
+      return isName(filter, "Crypt");
+    }
+    for (const f of filter) {
+      if (isName(this.#fetchIfRef(f), "Crypt")) {
+        return true;
+      }
+    }
+    return false;
   }
   #findStreamLength(startPos) {
     const {
@@ -11716,42 +11708,43 @@ class Parser {
     }
     this.shift();
     stream = stream.makeSubStream(startPos, length, dict);
-    if (cipherTransform) {
+    const filter = dict.get("F", "Filter");
+    if (cipherTransform && !this.#hasCryptFilter(filter)) {
       stream = cipherTransform.createStream(stream, length);
     }
-    stream = this.filter(stream, dict, length);
+    stream = this.filter(stream, dict, length, cipherTransform);
     stream.dict = dict;
     return stream;
   }
-  filter(stream, dict, length) {
+  filter(stream, dict, length, cipherTransform = null) {
     let filter = dict.get("F", "Filter");
     let params = dict.get("DP", "DecodeParms");
     if (filter instanceof Name) {
       if (Array.isArray(params)) {
         warn("/DecodeParms should not be an Array, when /Filter is a Name.");
       }
-      return this.makeFilter(stream, filter.name, length, params);
+      return this.makeFilter(stream, filter.name, length, params, cipherTransform);
     }
     let maybeLength = length;
     if (Array.isArray(filter)) {
       const filterArray = filter;
       const paramsArray = params;
       for (let i = 0, ii = filterArray.length; i < ii; ++i) {
-        filter = this.xref.fetchIfRef(filterArray[i]);
+        filter = this.#fetchIfRef(filterArray[i]);
         if (!(filter instanceof Name)) {
           throw new FormatError(`Bad filter name "${filter}"`);
         }
         params = null;
         if (Array.isArray(paramsArray) && i in paramsArray) {
-          params = this.xref.fetchIfRef(paramsArray[i]);
+          params = this.#fetchIfRef(paramsArray[i]);
         }
-        stream = this.makeFilter(stream, filter.name, maybeLength, params);
+        stream = this.makeFilter(stream, filter.name, maybeLength, params, cipherTransform);
         maybeLength = null;
       }
     }
     return stream;
   }
-  makeFilter(stream, name, maybeLength, params) {
+  makeFilter(stream, name, maybeLength, params, cipherTransform = null) {
     if (maybeLength === 0) {
       warn(`Empty "${name}" stream.`);
       return new NullStream();
@@ -11796,6 +11789,16 @@ class Parser {
           return new Jbig2Stream(stream, maybeLength, params);
         case "BrotliDecode":
           return new BrotliStream(stream, maybeLength);
+        case "Crypt":
+          {
+            if (!cipherTransform) {
+              warn('Filter "Crypt" is missing a cipher transform.');
+              return stream;
+            }
+            const param = params instanceof Dict ? params.get("Name") : null;
+            const cryptName = param instanceof Name ? param : Name.get("Identity");
+            return cipherTransform.createStream(stream, maybeLength, cryptName);
+          }
       }
       warn(`Filter "${name}" is not supported.`);
       return stream;
@@ -17623,7 +17626,7 @@ function getUnicodeRangeFor(value, lastPosition = -1) {
   }
   return -1;
 }
-const SpecialCharRegExp = new RegExp("^(\\s)|(\\p{Mn})|(\\p{Cf})$", "u");
+const SpecialCharRegExp = /^(\s)|(\p{Mn})|(\p{Cf})$/u;
 const CategoryCache = new Map();
 function getCharUnicodeCategory(char) {
   const cachedCategory = CategoryCache.get(char);
@@ -17980,7 +17983,14 @@ class DataBuilder {
 
 
 
+
 const MAX_SUBR_NESTING = 10;
+function looksLikeUnsigned16BitNegative(coord) {
+  return coord > 0x7fff && coord <= 0xffff;
+}
+function recoverSigned16BitBBox(bbox, onlyLowerLeft = false) {
+  return Util.normalizeRect(bbox.map((coord, i) => (!onlyLowerLeft || i < 2) && looksLikeUnsigned16BitNegative(coord) ? coord - 0x10000 : coord));
+}
 const CFFStandardStrings = [".notdef", "space", "exclam", "quotedbl", "numbersign", "dollar", "percent", "ampersand", "quoteright", "parenleft", "parenright", "asterisk", "plus", "comma", "hyphen", "period", "slash", "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "colon", "semicolon", "less", "equal", "greater", "question", "at", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "bracketleft", "backslash", "bracketright", "asciicircum", "underscore", "quoteleft", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "braceleft", "bar", "braceright", "asciitilde", "exclamdown", "cent", "sterling", "fraction", "yen", "florin", "section", "currency", "quotesingle", "quotedblleft", "guillemotleft", "guilsinglleft", "guilsinglright", "fi", "fl", "endash", "dagger", "daggerdbl", "periodcentered", "paragraph", "bullet", "quotesinglbase", "quotedblbase", "quotedblright", "guillemotright", "ellipsis", "perthousand", "questiondown", "grave", "acute", "circumflex", "tilde", "macron", "breve", "dotaccent", "dieresis", "ring", "cedilla", "hungarumlaut", "ogonek", "caron", "emdash", "AE", "ordfeminine", "Lslash", "Oslash", "OE", "ordmasculine", "ae", "dotlessi", "lslash", "oslash", "oe", "germandbls", "onesuperior", "logicalnot", "mu", "trademark", "Eth", "onehalf", "plusminus", "Thorn", "onequarter", "divide", "brokenbar", "degree", "thorn", "threequarters", "twosuperior", "registered", "minus", "eth", "multiply", "threesuperior", "copyright", "Aacute", "Acircumflex", "Adieresis", "Agrave", "Aring", "Atilde", "Ccedilla", "Eacute", "Ecircumflex", "Edieresis", "Egrave", "Iacute", "Icircumflex", "Idieresis", "Igrave", "Ntilde", "Oacute", "Ocircumflex", "Odieresis", "Ograve", "Otilde", "Scaron", "Uacute", "Ucircumflex", "Udieresis", "Ugrave", "Yacute", "Ydieresis", "Zcaron", "aacute", "acircumflex", "adieresis", "agrave", "aring", "atilde", "ccedilla", "eacute", "ecircumflex", "edieresis", "egrave", "iacute", "icircumflex", "idieresis", "igrave", "ntilde", "oacute", "ocircumflex", "odieresis", "ograve", "otilde", "scaron", "uacute", "ucircumflex", "udieresis", "ugrave", "yacute", "ydieresis", "zcaron", "exclamsmall", "Hungarumlautsmall", "dollaroldstyle", "dollarsuperior", "ampersandsmall", "Acutesmall", "parenleftsuperior", "parenrightsuperior", "twodotenleader", "onedotenleader", "zerooldstyle", "oneoldstyle", "twooldstyle", "threeoldstyle", "fouroldstyle", "fiveoldstyle", "sixoldstyle", "sevenoldstyle", "eightoldstyle", "nineoldstyle", "commasuperior", "threequartersemdash", "periodsuperior", "questionsmall", "asuperior", "bsuperior", "centsuperior", "dsuperior", "esuperior", "isuperior", "lsuperior", "msuperior", "nsuperior", "osuperior", "rsuperior", "ssuperior", "tsuperior", "ff", "ffi", "ffl", "parenleftinferior", "parenrightinferior", "Circumflexsmall", "hyphensuperior", "Gravesmall", "Asmall", "Bsmall", "Csmall", "Dsmall", "Esmall", "Fsmall", "Gsmall", "Hsmall", "Ismall", "Jsmall", "Ksmall", "Lsmall", "Msmall", "Nsmall", "Osmall", "Psmall", "Qsmall", "Rsmall", "Ssmall", "Tsmall", "Usmall", "Vsmall", "Wsmall", "Xsmall", "Ysmall", "Zsmall", "colonmonetary", "onefitted", "rupiah", "Tildesmall", "exclamdownsmall", "centoldstyle", "Lslashsmall", "Scaronsmall", "Zcaronsmall", "Dieresissmall", "Brevesmall", "Caronsmall", "Dotaccentsmall", "Macronsmall", "figuredash", "hypheninferior", "Ogoneksmall", "Ringsmall", "Cedillasmall", "questiondownsmall", "oneeighth", "threeeighths", "fiveeighths", "seveneighths", "onethird", "twothirds", "zerosuperior", "foursuperior", "fivesuperior", "sixsuperior", "sevensuperior", "eightsuperior", "ninesuperior", "zeroinferior", "oneinferior", "twoinferior", "threeinferior", "fourinferior", "fiveinferior", "sixinferior", "seveninferior", "eightinferior", "nineinferior", "centinferior", "dollarinferior", "periodinferior", "commainferior", "Agravesmall", "Aacutesmall", "Acircumflexsmall", "Atildesmall", "Adieresissmall", "Aringsmall", "AEsmall", "Ccedillasmall", "Egravesmall", "Eacutesmall", "Ecircumflexsmall", "Edieresissmall", "Igravesmall", "Iacutesmall", "Icircumflexsmall", "Idieresissmall", "Ethsmall", "Ntildesmall", "Ogravesmall", "Oacutesmall", "Ocircumflexsmall", "Otildesmall", "Odieresissmall", "OEsmall", "Oslashsmall", "Ugravesmall", "Uacutesmall", "Ucircumflexsmall", "Udieresissmall", "Yacutesmall", "Thornsmall", "Ydieresissmall", "001.000", "001.001", "001.002", "001.003", "Black", "Bold", "Book", "Light", "Medium", "Regular", "Roman", "Semibold"];
 const NUM_STANDARD_CFF_STRINGS = 391;
 const DEFAULT_BLUE_SCALE = 0.039625;
@@ -18225,9 +18235,19 @@ class CFFParser {
       properties.fontMatrix = fontMatrix;
     }
     let fontBBox = topDict.getByName("FontBBox");
-    if (fontBBox?.every(coord => coord === 0) && properties.bbox) {
-      fontBBox = Util.normalizeRect(properties.bbox.map(coord => coord > 0x7fff && coord <= 0xffff ? coord - 0x10000 : coord));
+    const descriptorBBox = properties.bbox?.some(coord => coord !== 0) ? recoverSigned16BitBBox(properties.bbox) : null;
+    const cffBBoxHasUnsignedLowerLeft = fontBBox?.slice(0, 2).some(looksLikeUnsigned16BitNegative);
+    const cffBBoxHasUnsignedCoords = fontBBox?.some(looksLikeUnsigned16BitNegative);
+    if (fontBBox?.every(coord => coord === 0) && descriptorBBox) {
+      fontBBox = descriptorBBox;
       topDict.setByName("FontBBox", fontBBox);
+    } else if (cffBBoxHasUnsignedCoords) {
+      const recoveredFontBBox = recoverSigned16BitBBox(fontBBox);
+      const descriptorCorroborates = descriptorBBox && properties.bbox.some(coord => coord < 0) && !properties.bbox.some(looksLikeUnsigned16BitNegative) && isArrayEqual(recoveredFontBBox, descriptorBBox);
+      if (descriptorCorroborates || cffBBoxHasUnsignedLowerLeft) {
+        fontBBox = descriptorCorroborates ? recoveredFontBBox : recoverSigned16BitBBox(fontBBox, true);
+        topDict.setByName("FontBBox", fontBBox);
+      }
     }
     if (fontBBox?.some(coord => coord !== 0)) {
       properties.ascent = Math.max(fontBBox[3], fontBBox[1]);
@@ -18637,6 +18657,9 @@ class CFFParser {
       this.emptyPrivateDictionary(parentDict);
       return;
     }
+    if (offset + size > this.bytes.length) {
+      throw new FormatError("CFF Private DICT extends past end of font");
+    }
     const privateDictEnd = offset + size;
     const dictData = this.bytes.subarray(offset, privateDictEnd);
     const dict = this.parseDict(dictData);
@@ -18653,6 +18676,27 @@ class CFFParser {
     }
     if (expansionFactor === 0) {
       privateDict.setByName("ExpansionFactor", DEFAULT_EXPANSION_FACTOR);
+    }
+    if (blueScale > 0) {
+      let maxZoneHeight = 0;
+      for (const zones of [privateDict.getByName("BlueValues"), privateDict.getByName("OtherBlues")]) {
+        if (!zones) {
+          continue;
+        }
+        for (let i = 1; i < zones.length; i += 2) {
+          if (zones[i] > maxZoneHeight) {
+            maxZoneHeight = zones[i];
+          }
+        }
+      }
+      if (maxZoneHeight > 0) {
+        const minBlueScale = blueScale < DEFAULT_BLUE_SCALE ? 0.5 / maxZoneHeight : -Infinity;
+        const maxBlueScale = 1 / maxZoneHeight;
+        const clamped = MathClamp(blueScale, minBlueScale, maxBlueScale);
+        if (clamped !== blueScale) {
+          privateDict.setByName("BlueScale", clamped);
+        }
+      }
     }
     if (!privateDict.getByName("Subrs")) {
       return;
@@ -20359,6 +20403,648 @@ function isKnownFontName(name) {
   return !!(getStdFontMap()[fontName] || getNonStdFontMap()[fontName] || getSerifFonts()[fontName] || getSymbolsFonts()[fontName]);
 }
 
+;// ./src/core/glyf.js
+const ON_CURVE_POINT = 1 << 0;
+const X_SHORT_VECTOR = 1 << 1;
+const Y_SHORT_VECTOR = 1 << 2;
+const REPEAT_FLAG = 1 << 3;
+const X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR = 1 << 4;
+const Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR = 1 << 5;
+const OVERLAP_SIMPLE = 1 << 6;
+const ARG_1_AND_2_ARE_WORDS = 1 << 0;
+const ARGS_ARE_XY_VALUES = 1 << 1;
+const WE_HAVE_A_SCALE = 1 << 3;
+const MORE_COMPONENTS = 1 << 5;
+const WE_HAVE_AN_X_AND_Y_SCALE = 1 << 6;
+const WE_HAVE_A_TWO_BY_TWO = 1 << 7;
+const WE_HAVE_INSTRUCTIONS = 1 << 8;
+const GLYPH_HEADER_SIZE = 10;
+class GlyfTable {
+  constructor({
+    glyfTable,
+    isGlyphLocationsLong,
+    locaTable,
+    numGlyphs
+  }) {
+    this.glyphs = [];
+    const loca = new DataView(locaTable.buffer, locaTable.byteOffset, locaTable.byteLength);
+    const glyf = new DataView(glyfTable.buffer, glyfTable.byteOffset, glyfTable.byteLength);
+    const offsetSize = isGlyphLocationsLong ? 4 : 2;
+    let prev = isGlyphLocationsLong ? loca.getUint32(0) : 2 * loca.getUint16(0);
+    let pos = 0;
+    for (let i = 0; i < numGlyphs; i++) {
+      pos += offsetSize;
+      const next = isGlyphLocationsLong ? loca.getUint32(pos) : 2 * loca.getUint16(pos);
+      if (next === prev) {
+        this.glyphs.push(new Glyph({}));
+        continue;
+      }
+      const glyph = Glyph.parse(prev, glyf);
+      this.glyphs.push(glyph);
+      prev = next;
+    }
+  }
+  getSize() {
+    return Math.sumPrecise(this.glyphs.map(g => g.getSize() + 3 & ~3));
+  }
+  write() {
+    const totalSize = this.getSize();
+    const glyfTable = new DataView(new ArrayBuffer(totalSize));
+    const isLocationLong = totalSize > 0x1fffe;
+    const offsetSize = isLocationLong ? 4 : 2;
+    const locaTable = new DataView(new ArrayBuffer((this.glyphs.length + 1) * offsetSize));
+    if (isLocationLong) {
+      locaTable.setUint32(0, 0);
+    } else {
+      locaTable.setUint16(0, 0);
+    }
+    let pos = 0;
+    let locaIndex = 0;
+    for (const glyph of this.glyphs) {
+      pos += glyph.write(pos, glyfTable);
+      pos = pos + 3 & ~3;
+      locaIndex += offsetSize;
+      if (isLocationLong) {
+        locaTable.setUint32(locaIndex, pos);
+      } else {
+        locaTable.setUint16(locaIndex, pos >> 1);
+      }
+    }
+    return {
+      isLocationLong,
+      loca: new Uint8Array(locaTable.buffer),
+      glyf: new Uint8Array(glyfTable.buffer)
+    };
+  }
+  scale(factors) {
+    for (let i = 0, ii = this.glyphs.length; i < ii; i++) {
+      this.glyphs[i].scale(factors[i]);
+    }
+  }
+}
+class Glyph {
+  constructor({
+    header = null,
+    simple = null,
+    composites = null
+  }) {
+    this.header = header;
+    this.simple = simple;
+    this.composites = composites;
+  }
+  static parse(pos, glyf) {
+    const [read, header] = GlyphHeader.parse(pos, glyf);
+    pos += read;
+    if (header.numberOfContours < 0) {
+      const composites = [];
+      while (true) {
+        const [n, composite] = CompositeGlyph.parse(pos, glyf);
+        pos += n;
+        composites.push(composite);
+        if (!(composite.flags & MORE_COMPONENTS)) {
+          break;
+        }
+      }
+      return new Glyph({
+        header,
+        composites
+      });
+    }
+    const simple = SimpleGlyph.parse(pos, glyf, header.numberOfContours);
+    return new Glyph({
+      header,
+      simple
+    });
+  }
+  getSize() {
+    if (!this.header) {
+      return 0;
+    }
+    const size = this.simple ? this.simple.getSize() : Math.sumPrecise(this.composites.map(c => c.getSize()));
+    return this.header.getSize() + size;
+  }
+  write(pos, buf) {
+    if (!this.header) {
+      return 0;
+    }
+    const spos = pos;
+    pos += this.header.write(pos, buf);
+    if (this.simple) {
+      pos += this.simple.write(pos, buf);
+    } else {
+      for (const composite of this.composites) {
+        pos += composite.write(pos, buf);
+      }
+    }
+    return pos - spos;
+  }
+  scale(factor) {
+    if (!this.header) {
+      return;
+    }
+    const xMiddle = (this.header.xMin + this.header.xMax) / 2;
+    this.header.scale(xMiddle, factor);
+    if (this.simple) {
+      this.simple.scale(xMiddle, factor);
+    } else {
+      for (const composite of this.composites) {
+        composite.scale(xMiddle, factor);
+      }
+    }
+  }
+}
+class GlyphHeader {
+  constructor({
+    numberOfContours,
+    xMin,
+    yMin,
+    xMax,
+    yMax
+  }) {
+    this.numberOfContours = numberOfContours;
+    this.xMin = xMin;
+    this.yMin = yMin;
+    this.xMax = xMax;
+    this.yMax = yMax;
+  }
+  static parse(pos, glyf) {
+    return [GLYPH_HEADER_SIZE, new GlyphHeader({
+      numberOfContours: glyf.getInt16(pos),
+      xMin: glyf.getInt16(pos + 2),
+      yMin: glyf.getInt16(pos + 4),
+      xMax: glyf.getInt16(pos + 6),
+      yMax: glyf.getInt16(pos + 8)
+    })];
+  }
+  getSize() {
+    return GLYPH_HEADER_SIZE;
+  }
+  write(pos, buf) {
+    buf.setInt16(pos, this.numberOfContours);
+    buf.setInt16(pos + 2, this.xMin);
+    buf.setInt16(pos + 4, this.yMin);
+    buf.setInt16(pos + 6, this.xMax);
+    buf.setInt16(pos + 8, this.yMax);
+    return GLYPH_HEADER_SIZE;
+  }
+  scale(x, factor) {
+    this.xMin = Math.round(x + (this.xMin - x) * factor);
+    this.xMax = Math.round(x + (this.xMax - x) * factor);
+  }
+}
+class Contour {
+  constructor({
+    flags,
+    xCoordinates,
+    yCoordinates
+  }) {
+    this.xCoordinates = xCoordinates;
+    this.yCoordinates = yCoordinates;
+    this.flags = flags;
+  }
+}
+class SimpleGlyph {
+  constructor({
+    contours,
+    instructions
+  }) {
+    this.contours = contours;
+    this.instructions = instructions;
+  }
+  static parse(pos, glyf, numberOfContours) {
+    const endPtsOfContours = [];
+    for (let i = 0; i < numberOfContours; i++) {
+      const endPt = glyf.getUint16(pos);
+      pos += 2;
+      endPtsOfContours.push(endPt);
+    }
+    const numberOfPt = endPtsOfContours[numberOfContours - 1] + 1;
+    const instructionLength = glyf.getUint16(pos);
+    pos += 2;
+    const instructions = new Uint8Array(glyf).slice(pos, pos + instructionLength);
+    pos += instructionLength;
+    const flags = [];
+    for (let i = 0; i < numberOfPt; pos++, i++) {
+      let flag = glyf.getUint8(pos);
+      flags.push(flag);
+      if (flag & REPEAT_FLAG) {
+        const count = glyf.getUint8(++pos);
+        flag ^= REPEAT_FLAG;
+        for (let m = 0; m < count; m++) {
+          flags.push(flag);
+        }
+        i += count;
+      }
+    }
+    const allXCoordinates = [];
+    let xCoordinates = [];
+    let yCoordinates = [];
+    let pointFlags = [];
+    const contours = [];
+    let endPtsOfContoursIndex = 0;
+    let lastCoordinate = 0;
+    for (let i = 0; i < numberOfPt; i++) {
+      const flag = flags[i];
+      if (flag & X_SHORT_VECTOR) {
+        const x = glyf.getUint8(pos++);
+        lastCoordinate += flag & X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR ? x : -x;
+        xCoordinates.push(lastCoordinate);
+      } else if (flag & X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR) {
+        xCoordinates.push(lastCoordinate);
+      } else {
+        lastCoordinate += glyf.getInt16(pos);
+        pos += 2;
+        xCoordinates.push(lastCoordinate);
+      }
+      if (endPtsOfContours[endPtsOfContoursIndex] === i) {
+        endPtsOfContoursIndex++;
+        allXCoordinates.push(xCoordinates);
+        xCoordinates = [];
+      }
+    }
+    lastCoordinate = 0;
+    endPtsOfContoursIndex = 0;
+    for (let i = 0; i < numberOfPt; i++) {
+      const flag = flags[i];
+      if (flag & Y_SHORT_VECTOR) {
+        const y = glyf.getUint8(pos++);
+        lastCoordinate += flag & Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR ? y : -y;
+        yCoordinates.push(lastCoordinate);
+      } else if (flag & Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR) {
+        yCoordinates.push(lastCoordinate);
+      } else {
+        lastCoordinate += glyf.getInt16(pos);
+        pos += 2;
+        yCoordinates.push(lastCoordinate);
+      }
+      pointFlags.push(flag & ON_CURVE_POINT | flag & OVERLAP_SIMPLE);
+      if (endPtsOfContours[endPtsOfContoursIndex] === i) {
+        xCoordinates = allXCoordinates[endPtsOfContoursIndex];
+        endPtsOfContoursIndex++;
+        contours.push(new Contour({
+          flags: pointFlags,
+          xCoordinates,
+          yCoordinates
+        }));
+        yCoordinates = [];
+        pointFlags = [];
+      }
+    }
+    return new SimpleGlyph({
+      contours,
+      instructions
+    });
+  }
+  getSize() {
+    let size = this.contours.length * 2 + 2 + this.instructions.length;
+    let lastX = 0;
+    let lastY = 0;
+    for (const contour of this.contours) {
+      size += contour.flags.length;
+      for (let i = 0, ii = contour.xCoordinates.length; i < ii; i++) {
+        const x = contour.xCoordinates[i];
+        const y = contour.yCoordinates[i];
+        let abs = Math.abs(x - lastX);
+        if (abs > 255) {
+          size += 2;
+        } else if (abs > 0) {
+          size += 1;
+        }
+        lastX = x;
+        abs = Math.abs(y - lastY);
+        if (abs > 255) {
+          size += 2;
+        } else if (abs > 0) {
+          size += 1;
+        }
+        lastY = y;
+      }
+    }
+    return size;
+  }
+  write(pos, buf) {
+    const spos = pos;
+    const xCoordinates = [];
+    const yCoordinates = [];
+    const flags = [];
+    let lastX = 0;
+    let lastY = 0;
+    for (const contour of this.contours) {
+      for (let i = 0, ii = contour.xCoordinates.length; i < ii; i++) {
+        let flag = contour.flags[i];
+        const x = contour.xCoordinates[i];
+        let delta = x - lastX;
+        if (delta === 0) {
+          flag |= X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR;
+          xCoordinates.push(0);
+        } else {
+          const abs = Math.abs(delta);
+          if (abs <= 255) {
+            flag |= delta >= 0 ? X_SHORT_VECTOR | X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR : X_SHORT_VECTOR;
+            xCoordinates.push(abs);
+          } else {
+            xCoordinates.push(delta);
+          }
+        }
+        lastX = x;
+        const y = contour.yCoordinates[i];
+        delta = y - lastY;
+        if (delta === 0) {
+          flag |= Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR;
+          yCoordinates.push(0);
+        } else {
+          const abs = Math.abs(delta);
+          if (abs <= 255) {
+            flag |= delta >= 0 ? Y_SHORT_VECTOR | Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR : Y_SHORT_VECTOR;
+            yCoordinates.push(abs);
+          } else {
+            yCoordinates.push(delta);
+          }
+        }
+        lastY = y;
+        flags.push(flag);
+      }
+      buf.setUint16(pos, xCoordinates.length - 1);
+      pos += 2;
+    }
+    buf.setUint16(pos, this.instructions.length);
+    pos += 2;
+    if (this.instructions.length) {
+      new Uint8Array(buf.buffer, 0, buf.buffer.byteLength).set(this.instructions, pos);
+      pos += this.instructions.length;
+    }
+    for (const flag of flags) {
+      buf.setUint8(pos++, flag);
+    }
+    for (let i = 0, ii = xCoordinates.length; i < ii; i++) {
+      const x = xCoordinates[i];
+      const flag = flags[i];
+      if (flag & X_SHORT_VECTOR) {
+        buf.setUint8(pos++, x);
+      } else if (!(flag & X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR)) {
+        buf.setInt16(pos, x);
+        pos += 2;
+      }
+    }
+    for (let i = 0, ii = yCoordinates.length; i < ii; i++) {
+      const y = yCoordinates[i];
+      const flag = flags[i];
+      if (flag & Y_SHORT_VECTOR) {
+        buf.setUint8(pos++, y);
+      } else if (!(flag & Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR)) {
+        buf.setInt16(pos, y);
+        pos += 2;
+      }
+    }
+    return pos - spos;
+  }
+  scale(x, factor) {
+    for (const contour of this.contours) {
+      if (contour.xCoordinates.length === 0) {
+        continue;
+      }
+      for (let i = 0, ii = contour.xCoordinates.length; i < ii; i++) {
+        contour.xCoordinates[i] = Math.round(x + (contour.xCoordinates[i] - x) * factor);
+      }
+    }
+  }
+}
+class CompositeGlyph {
+  constructor({
+    flags,
+    glyphIndex,
+    argument1,
+    argument2,
+    transf,
+    instructions
+  }) {
+    this.flags = flags;
+    this.glyphIndex = glyphIndex;
+    this.argument1 = argument1;
+    this.argument2 = argument2;
+    this.transf = transf;
+    this.instructions = instructions;
+  }
+  static parse(pos, glyf) {
+    const spos = pos;
+    const transf = [];
+    let flags = glyf.getUint16(pos);
+    const glyphIndex = glyf.getUint16(pos + 2);
+    pos += 4;
+    let argument1, argument2;
+    if (flags & ARG_1_AND_2_ARE_WORDS) {
+      if (flags & ARGS_ARE_XY_VALUES) {
+        argument1 = glyf.getInt16(pos);
+        argument2 = glyf.getInt16(pos + 2);
+      } else {
+        argument1 = glyf.getUint16(pos);
+        argument2 = glyf.getUint16(pos + 2);
+      }
+      pos += 4;
+      flags ^= ARG_1_AND_2_ARE_WORDS;
+    } else {
+      if (flags & ARGS_ARE_XY_VALUES) {
+        argument1 = glyf.getInt8(pos);
+        argument2 = glyf.getInt8(pos + 1);
+      } else {
+        argument1 = glyf.getUint8(pos);
+        argument2 = glyf.getUint8(pos + 1);
+      }
+      pos += 2;
+    }
+    if (flags & WE_HAVE_A_SCALE) {
+      transf.push(glyf.getUint16(pos));
+      pos += 2;
+    } else if (flags & WE_HAVE_AN_X_AND_Y_SCALE) {
+      transf.push(glyf.getUint16(pos), glyf.getUint16(pos + 2));
+      pos += 4;
+    } else if (flags & WE_HAVE_A_TWO_BY_TWO) {
+      transf.push(glyf.getUint16(pos), glyf.getUint16(pos + 2), glyf.getUint16(pos + 4), glyf.getUint16(pos + 6));
+      pos += 8;
+    }
+    let instructions = null;
+    if (flags & WE_HAVE_INSTRUCTIONS) {
+      const instructionLength = glyf.getUint16(pos);
+      pos += 2;
+      instructions = new Uint8Array(glyf).slice(pos, pos + instructionLength);
+      pos += instructionLength;
+    }
+    return [pos - spos, new CompositeGlyph({
+      flags,
+      glyphIndex,
+      argument1,
+      argument2,
+      transf,
+      instructions
+    })];
+  }
+  getSize() {
+    let size = 2 + 2 + this.transf.length * 2;
+    if (this.flags & WE_HAVE_INSTRUCTIONS) {
+      size += 2 + this.instructions.length;
+    }
+    size += 2;
+    if (this.flags & 2) {
+      if (!(this.argument1 >= -128 && this.argument1 <= 127 && this.argument2 >= -128 && this.argument2 <= 127)) {
+        size += 2;
+      }
+    } else if (!(this.argument1 >= 0 && this.argument1 <= 255 && this.argument2 >= 0 && this.argument2 <= 255)) {
+      size += 2;
+    }
+    return size;
+  }
+  write(pos, buf) {
+    const spos = pos;
+    if (this.flags & ARGS_ARE_XY_VALUES) {
+      if (!(this.argument1 >= -128 && this.argument1 <= 127 && this.argument2 >= -128 && this.argument2 <= 127)) {
+        this.flags |= ARG_1_AND_2_ARE_WORDS;
+      }
+    } else if (!(this.argument1 >= 0 && this.argument1 <= 255 && this.argument2 >= 0 && this.argument2 <= 255)) {
+      this.flags |= ARG_1_AND_2_ARE_WORDS;
+    }
+    buf.setUint16(pos, this.flags);
+    buf.setUint16(pos + 2, this.glyphIndex);
+    pos += 4;
+    if (this.flags & ARG_1_AND_2_ARE_WORDS) {
+      if (this.flags & ARGS_ARE_XY_VALUES) {
+        buf.setInt16(pos, this.argument1);
+        buf.setInt16(pos + 2, this.argument2);
+      } else {
+        buf.setUint16(pos, this.argument1);
+        buf.setUint16(pos + 2, this.argument2);
+      }
+      pos += 4;
+    } else {
+      buf.setUint8(pos, this.argument1);
+      buf.setUint8(pos + 1, this.argument2);
+      pos += 2;
+    }
+    if (this.flags & WE_HAVE_INSTRUCTIONS) {
+      buf.setUint16(pos, this.instructions.length);
+      pos += 2;
+      if (this.instructions.length) {
+        new Uint8Array(buf.buffer, 0, buf.buffer.byteLength).set(this.instructions, pos);
+        pos += this.instructions.length;
+      }
+    }
+    return pos - spos;
+  }
+  scale(x, factor) {}
+}
+function pruneCompositeGlyphCycles(glyfTable, locaEntries, numGlyphs) {
+  const glyf = new DataView(glyfTable.buffer, glyfTable.byteOffset, glyfTable.byteLength);
+  const components = new Array(numGlyphs);
+  for (let i = 0; i < numGlyphs; i++) {
+    const offset = locaEntries[i].offset;
+    const endOffset = Math.min(locaEntries[i].endOffset, glyf.byteLength);
+    if (endOffset - offset <= GLYPH_HEADER_SIZE || glyf.getInt16(offset) >= 0) {
+      continue;
+    }
+    const comps = [];
+    let p = offset + GLYPH_HEADER_SIZE;
+    while (p + 4 <= endOffset) {
+      const flags = glyf.getUint16(p);
+      const gid = glyf.getUint16(p + 2);
+      let size = 4 + (flags & ARG_1_AND_2_ARE_WORDS ? 4 : 2);
+      if (flags & WE_HAVE_A_SCALE) {
+        size += 2;
+      } else if (flags & WE_HAVE_AN_X_AND_Y_SCALE) {
+        size += 4;
+      } else if (flags & WE_HAVE_A_TWO_BY_TWO) {
+        size += 8;
+      }
+      comps.push({
+        gid,
+        offset: p,
+        size,
+        flags
+      });
+      p += size;
+      if (!(flags & MORE_COMPONENTS)) {
+        break;
+      }
+    }
+    if (comps.length) {
+      components[i] = comps;
+    }
+  }
+  const WHITE = 0,
+    GRAY = 1,
+    BLACK = 2;
+  const state = new Uint8Array(numGlyphs);
+  const backEdges = new Map();
+  for (let start = 0; start < numGlyphs; start++) {
+    if (state[start] !== WHITE || !components[start]) {
+      continue;
+    }
+    const stack = [{
+      node: start,
+      idx: 0
+    }];
+    state[start] = GRAY;
+    while (stack.length > 0) {
+      const top = stack.at(-1);
+      const comps = components[top.node];
+      if (!comps || top.idx >= comps.length) {
+        state[top.node] = BLACK;
+        stack.pop();
+        continue;
+      }
+      const compIdx = top.idx++;
+      const next = comps[compIdx].gid;
+      if (next >= numGlyphs || state[next] === BLACK) {
+        continue;
+      }
+      if (state[next] === WHITE) {
+        state[next] = GRAY;
+        stack.push({
+          node: next,
+          idx: 0
+        });
+        continue;
+      }
+      let removeSet = backEdges.get(top.node);
+      if (!removeSet) {
+        removeSet = new Set();
+        backEdges.set(top.node, removeSet);
+      }
+      removeSet.add(compIdx);
+    }
+  }
+  const droppedGlyphs = new Set();
+  for (const [gIdx, removeSet] of backEdges) {
+    const comps = components[gIdx];
+    const remaining = [];
+    for (let ci = 0; ci < comps.length; ci++) {
+      if (!removeSet.has(ci)) {
+        remaining.push(comps[ci]);
+      }
+    }
+    if (remaining.length === 0) {
+      droppedGlyphs.add(gIdx);
+      continue;
+    }
+    const start = locaEntries[gIdx].offset;
+    const endOffset = Math.min(locaEntries[gIdx].endOffset, glyf.byteLength);
+    let writePos = start + GLYPH_HEADER_SIZE;
+    for (let ci = 0; ci < remaining.length; ci++) {
+      const c = remaining[ci];
+      const isLast = ci === remaining.length - 1;
+      let newFlags = c.flags & ~WE_HAVE_INSTRUCTIONS;
+      newFlags = isLast ? newFlags & ~MORE_COMPONENTS : newFlags | MORE_COMPONENTS;
+      if (writePos !== c.offset) {
+        glyfTable.copyWithin(writePos, c.offset, c.offset + c.size);
+      }
+      glyf.setUint16(writePos, newFlags);
+      writePos += c.size;
+    }
+    if (writePos < endOffset) {
+      glyfTable.fill(0, writePos, endOffset);
+    }
+  }
+  return droppedGlyphs;
+}
+
 ;// ./src/core/to_unicode_map.js
 
 class ToUnicodeMap {
@@ -20542,13 +21228,10 @@ function getFloat214(view, offset) {
 }
 function getSubroutineBias(subrs) {
   const numSubrs = subrs.length;
-  let bias = 32768;
-  if (numSubrs < 1240) {
-    bias = 107;
-  } else if (numSubrs < 33900) {
-    bias = 1131;
+  if (numSubrs >= 33900) {
+    return 32768;
   }
-  return bias;
+  return numSubrs < 1240 ? 107 : 1131;
 }
 function parseCmap(data, start, end) {
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
@@ -20654,6 +21337,9 @@ function lookupCmap(ranges, unicode) {
   };
 }
 function compileGlyf(code, cmds, font, visitedGlyphs = new Set()) {
+  if (!code?.length) {
+    return;
+  }
   if (visitedGlyphs.has(code)) {
     warn("compileGlyf: skipping recursive composite glyph reference.");
     return;
@@ -24364,534 +25050,6 @@ const getFontBasicMetrics = getLookupTableFactory(function (t) {
   };
 });
 
-;// ./src/core/glyf.js
-const ON_CURVE_POINT = 1 << 0;
-const X_SHORT_VECTOR = 1 << 1;
-const Y_SHORT_VECTOR = 1 << 2;
-const REPEAT_FLAG = 1 << 3;
-const X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR = 1 << 4;
-const Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR = 1 << 5;
-const OVERLAP_SIMPLE = 1 << 6;
-const ARG_1_AND_2_ARE_WORDS = 1 << 0;
-const ARGS_ARE_XY_VALUES = 1 << 1;
-const WE_HAVE_A_SCALE = 1 << 3;
-const MORE_COMPONENTS = 1 << 5;
-const WE_HAVE_AN_X_AND_Y_SCALE = 1 << 6;
-const WE_HAVE_A_TWO_BY_TWO = 1 << 7;
-const WE_HAVE_INSTRUCTIONS = 1 << 8;
-class GlyfTable {
-  constructor({
-    glyfTable,
-    isGlyphLocationsLong,
-    locaTable,
-    numGlyphs
-  }) {
-    this.glyphs = [];
-    const loca = new DataView(locaTable.buffer, locaTable.byteOffset, locaTable.byteLength);
-    const glyf = new DataView(glyfTable.buffer, glyfTable.byteOffset, glyfTable.byteLength);
-    const offsetSize = isGlyphLocationsLong ? 4 : 2;
-    let prev = isGlyphLocationsLong ? loca.getUint32(0) : 2 * loca.getUint16(0);
-    let pos = 0;
-    for (let i = 0; i < numGlyphs; i++) {
-      pos += offsetSize;
-      const next = isGlyphLocationsLong ? loca.getUint32(pos) : 2 * loca.getUint16(pos);
-      if (next === prev) {
-        this.glyphs.push(new Glyph({}));
-        continue;
-      }
-      const glyph = Glyph.parse(prev, glyf);
-      this.glyphs.push(glyph);
-      prev = next;
-    }
-  }
-  getSize() {
-    return Math.sumPrecise(this.glyphs.map(g => g.getSize() + 3 & ~3));
-  }
-  write() {
-    const totalSize = this.getSize();
-    const glyfTable = new DataView(new ArrayBuffer(totalSize));
-    const isLocationLong = totalSize > 0x1fffe;
-    const offsetSize = isLocationLong ? 4 : 2;
-    const locaTable = new DataView(new ArrayBuffer((this.glyphs.length + 1) * offsetSize));
-    if (isLocationLong) {
-      locaTable.setUint32(0, 0);
-    } else {
-      locaTable.setUint16(0, 0);
-    }
-    let pos = 0;
-    let locaIndex = 0;
-    for (const glyph of this.glyphs) {
-      pos += glyph.write(pos, glyfTable);
-      pos = pos + 3 & ~3;
-      locaIndex += offsetSize;
-      if (isLocationLong) {
-        locaTable.setUint32(locaIndex, pos);
-      } else {
-        locaTable.setUint16(locaIndex, pos >> 1);
-      }
-    }
-    return {
-      isLocationLong,
-      loca: new Uint8Array(locaTable.buffer),
-      glyf: new Uint8Array(glyfTable.buffer)
-    };
-  }
-  scale(factors) {
-    for (let i = 0, ii = this.glyphs.length; i < ii; i++) {
-      this.glyphs[i].scale(factors[i]);
-    }
-  }
-}
-class Glyph {
-  constructor({
-    header = null,
-    simple = null,
-    composites = null
-  }) {
-    this.header = header;
-    this.simple = simple;
-    this.composites = composites;
-  }
-  static parse(pos, glyf) {
-    const [read, header] = GlyphHeader.parse(pos, glyf);
-    pos += read;
-    if (header.numberOfContours < 0) {
-      const composites = [];
-      while (true) {
-        const [n, composite] = CompositeGlyph.parse(pos, glyf);
-        pos += n;
-        composites.push(composite);
-        if (!(composite.flags & MORE_COMPONENTS)) {
-          break;
-        }
-      }
-      return new Glyph({
-        header,
-        composites
-      });
-    }
-    const simple = SimpleGlyph.parse(pos, glyf, header.numberOfContours);
-    return new Glyph({
-      header,
-      simple
-    });
-  }
-  getSize() {
-    if (!this.header) {
-      return 0;
-    }
-    const size = this.simple ? this.simple.getSize() : Math.sumPrecise(this.composites.map(c => c.getSize()));
-    return this.header.getSize() + size;
-  }
-  write(pos, buf) {
-    if (!this.header) {
-      return 0;
-    }
-    const spos = pos;
-    pos += this.header.write(pos, buf);
-    if (this.simple) {
-      pos += this.simple.write(pos, buf);
-    } else {
-      for (const composite of this.composites) {
-        pos += composite.write(pos, buf);
-      }
-    }
-    return pos - spos;
-  }
-  scale(factor) {
-    if (!this.header) {
-      return;
-    }
-    const xMiddle = (this.header.xMin + this.header.xMax) / 2;
-    this.header.scale(xMiddle, factor);
-    if (this.simple) {
-      this.simple.scale(xMiddle, factor);
-    } else {
-      for (const composite of this.composites) {
-        composite.scale(xMiddle, factor);
-      }
-    }
-  }
-}
-class GlyphHeader {
-  constructor({
-    numberOfContours,
-    xMin,
-    yMin,
-    xMax,
-    yMax
-  }) {
-    this.numberOfContours = numberOfContours;
-    this.xMin = xMin;
-    this.yMin = yMin;
-    this.xMax = xMax;
-    this.yMax = yMax;
-  }
-  static parse(pos, glyf) {
-    return [10, new GlyphHeader({
-      numberOfContours: glyf.getInt16(pos),
-      xMin: glyf.getInt16(pos + 2),
-      yMin: glyf.getInt16(pos + 4),
-      xMax: glyf.getInt16(pos + 6),
-      yMax: glyf.getInt16(pos + 8)
-    })];
-  }
-  getSize() {
-    return 10;
-  }
-  write(pos, buf) {
-    buf.setInt16(pos, this.numberOfContours);
-    buf.setInt16(pos + 2, this.xMin);
-    buf.setInt16(pos + 4, this.yMin);
-    buf.setInt16(pos + 6, this.xMax);
-    buf.setInt16(pos + 8, this.yMax);
-    return 10;
-  }
-  scale(x, factor) {
-    this.xMin = Math.round(x + (this.xMin - x) * factor);
-    this.xMax = Math.round(x + (this.xMax - x) * factor);
-  }
-}
-class Contour {
-  constructor({
-    flags,
-    xCoordinates,
-    yCoordinates
-  }) {
-    this.xCoordinates = xCoordinates;
-    this.yCoordinates = yCoordinates;
-    this.flags = flags;
-  }
-}
-class SimpleGlyph {
-  constructor({
-    contours,
-    instructions
-  }) {
-    this.contours = contours;
-    this.instructions = instructions;
-  }
-  static parse(pos, glyf, numberOfContours) {
-    const endPtsOfContours = [];
-    for (let i = 0; i < numberOfContours; i++) {
-      const endPt = glyf.getUint16(pos);
-      pos += 2;
-      endPtsOfContours.push(endPt);
-    }
-    const numberOfPt = endPtsOfContours[numberOfContours - 1] + 1;
-    const instructionLength = glyf.getUint16(pos);
-    pos += 2;
-    const instructions = new Uint8Array(glyf).slice(pos, pos + instructionLength);
-    pos += instructionLength;
-    const flags = [];
-    for (let i = 0; i < numberOfPt; pos++, i++) {
-      let flag = glyf.getUint8(pos);
-      flags.push(flag);
-      if (flag & REPEAT_FLAG) {
-        const count = glyf.getUint8(++pos);
-        flag ^= REPEAT_FLAG;
-        for (let m = 0; m < count; m++) {
-          flags.push(flag);
-        }
-        i += count;
-      }
-    }
-    const allXCoordinates = [];
-    let xCoordinates = [];
-    let yCoordinates = [];
-    let pointFlags = [];
-    const contours = [];
-    let endPtsOfContoursIndex = 0;
-    let lastCoordinate = 0;
-    for (let i = 0; i < numberOfPt; i++) {
-      const flag = flags[i];
-      if (flag & X_SHORT_VECTOR) {
-        const x = glyf.getUint8(pos++);
-        lastCoordinate += flag & X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR ? x : -x;
-        xCoordinates.push(lastCoordinate);
-      } else if (flag & X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR) {
-        xCoordinates.push(lastCoordinate);
-      } else {
-        lastCoordinate += glyf.getInt16(pos);
-        pos += 2;
-        xCoordinates.push(lastCoordinate);
-      }
-      if (endPtsOfContours[endPtsOfContoursIndex] === i) {
-        endPtsOfContoursIndex++;
-        allXCoordinates.push(xCoordinates);
-        xCoordinates = [];
-      }
-    }
-    lastCoordinate = 0;
-    endPtsOfContoursIndex = 0;
-    for (let i = 0; i < numberOfPt; i++) {
-      const flag = flags[i];
-      if (flag & Y_SHORT_VECTOR) {
-        const y = glyf.getUint8(pos++);
-        lastCoordinate += flag & Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR ? y : -y;
-        yCoordinates.push(lastCoordinate);
-      } else if (flag & Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR) {
-        yCoordinates.push(lastCoordinate);
-      } else {
-        lastCoordinate += glyf.getInt16(pos);
-        pos += 2;
-        yCoordinates.push(lastCoordinate);
-      }
-      pointFlags.push(flag & ON_CURVE_POINT | flag & OVERLAP_SIMPLE);
-      if (endPtsOfContours[endPtsOfContoursIndex] === i) {
-        xCoordinates = allXCoordinates[endPtsOfContoursIndex];
-        endPtsOfContoursIndex++;
-        contours.push(new Contour({
-          flags: pointFlags,
-          xCoordinates,
-          yCoordinates
-        }));
-        yCoordinates = [];
-        pointFlags = [];
-      }
-    }
-    return new SimpleGlyph({
-      contours,
-      instructions
-    });
-  }
-  getSize() {
-    let size = this.contours.length * 2 + 2 + this.instructions.length;
-    let lastX = 0;
-    let lastY = 0;
-    for (const contour of this.contours) {
-      size += contour.flags.length;
-      for (let i = 0, ii = contour.xCoordinates.length; i < ii; i++) {
-        const x = contour.xCoordinates[i];
-        const y = contour.yCoordinates[i];
-        let abs = Math.abs(x - lastX);
-        if (abs > 255) {
-          size += 2;
-        } else if (abs > 0) {
-          size += 1;
-        }
-        lastX = x;
-        abs = Math.abs(y - lastY);
-        if (abs > 255) {
-          size += 2;
-        } else if (abs > 0) {
-          size += 1;
-        }
-        lastY = y;
-      }
-    }
-    return size;
-  }
-  write(pos, buf) {
-    const spos = pos;
-    const xCoordinates = [];
-    const yCoordinates = [];
-    const flags = [];
-    let lastX = 0;
-    let lastY = 0;
-    for (const contour of this.contours) {
-      for (let i = 0, ii = contour.xCoordinates.length; i < ii; i++) {
-        let flag = contour.flags[i];
-        const x = contour.xCoordinates[i];
-        let delta = x - lastX;
-        if (delta === 0) {
-          flag |= X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR;
-          xCoordinates.push(0);
-        } else {
-          const abs = Math.abs(delta);
-          if (abs <= 255) {
-            flag |= delta >= 0 ? X_SHORT_VECTOR | X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR : X_SHORT_VECTOR;
-            xCoordinates.push(abs);
-          } else {
-            xCoordinates.push(delta);
-          }
-        }
-        lastX = x;
-        const y = contour.yCoordinates[i];
-        delta = y - lastY;
-        if (delta === 0) {
-          flag |= Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR;
-          yCoordinates.push(0);
-        } else {
-          const abs = Math.abs(delta);
-          if (abs <= 255) {
-            flag |= delta >= 0 ? Y_SHORT_VECTOR | Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR : Y_SHORT_VECTOR;
-            yCoordinates.push(abs);
-          } else {
-            yCoordinates.push(delta);
-          }
-        }
-        lastY = y;
-        flags.push(flag);
-      }
-      buf.setUint16(pos, xCoordinates.length - 1);
-      pos += 2;
-    }
-    buf.setUint16(pos, this.instructions.length);
-    pos += 2;
-    if (this.instructions.length) {
-      new Uint8Array(buf.buffer, 0, buf.buffer.byteLength).set(this.instructions, pos);
-      pos += this.instructions.length;
-    }
-    for (const flag of flags) {
-      buf.setUint8(pos++, flag);
-    }
-    for (let i = 0, ii = xCoordinates.length; i < ii; i++) {
-      const x = xCoordinates[i];
-      const flag = flags[i];
-      if (flag & X_SHORT_VECTOR) {
-        buf.setUint8(pos++, x);
-      } else if (!(flag & X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR)) {
-        buf.setInt16(pos, x);
-        pos += 2;
-      }
-    }
-    for (let i = 0, ii = yCoordinates.length; i < ii; i++) {
-      const y = yCoordinates[i];
-      const flag = flags[i];
-      if (flag & Y_SHORT_VECTOR) {
-        buf.setUint8(pos++, y);
-      } else if (!(flag & Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR)) {
-        buf.setInt16(pos, y);
-        pos += 2;
-      }
-    }
-    return pos - spos;
-  }
-  scale(x, factor) {
-    for (const contour of this.contours) {
-      if (contour.xCoordinates.length === 0) {
-        continue;
-      }
-      for (let i = 0, ii = contour.xCoordinates.length; i < ii; i++) {
-        contour.xCoordinates[i] = Math.round(x + (contour.xCoordinates[i] - x) * factor);
-      }
-    }
-  }
-}
-class CompositeGlyph {
-  constructor({
-    flags,
-    glyphIndex,
-    argument1,
-    argument2,
-    transf,
-    instructions
-  }) {
-    this.flags = flags;
-    this.glyphIndex = glyphIndex;
-    this.argument1 = argument1;
-    this.argument2 = argument2;
-    this.transf = transf;
-    this.instructions = instructions;
-  }
-  static parse(pos, glyf) {
-    const spos = pos;
-    const transf = [];
-    let flags = glyf.getUint16(pos);
-    const glyphIndex = glyf.getUint16(pos + 2);
-    pos += 4;
-    let argument1, argument2;
-    if (flags & ARG_1_AND_2_ARE_WORDS) {
-      if (flags & ARGS_ARE_XY_VALUES) {
-        argument1 = glyf.getInt16(pos);
-        argument2 = glyf.getInt16(pos + 2);
-      } else {
-        argument1 = glyf.getUint16(pos);
-        argument2 = glyf.getUint16(pos + 2);
-      }
-      pos += 4;
-      flags ^= ARG_1_AND_2_ARE_WORDS;
-    } else {
-      if (flags & ARGS_ARE_XY_VALUES) {
-        argument1 = glyf.getInt8(pos);
-        argument2 = glyf.getInt8(pos + 1);
-      } else {
-        argument1 = glyf.getUint8(pos);
-        argument2 = glyf.getUint8(pos + 1);
-      }
-      pos += 2;
-    }
-    if (flags & WE_HAVE_A_SCALE) {
-      transf.push(glyf.getUint16(pos));
-      pos += 2;
-    } else if (flags & WE_HAVE_AN_X_AND_Y_SCALE) {
-      transf.push(glyf.getUint16(pos), glyf.getUint16(pos + 2));
-      pos += 4;
-    } else if (flags & WE_HAVE_A_TWO_BY_TWO) {
-      transf.push(glyf.getUint16(pos), glyf.getUint16(pos + 2), glyf.getUint16(pos + 4), glyf.getUint16(pos + 6));
-      pos += 8;
-    }
-    let instructions = null;
-    if (flags & WE_HAVE_INSTRUCTIONS) {
-      const instructionLength = glyf.getUint16(pos);
-      pos += 2;
-      instructions = new Uint8Array(glyf).slice(pos, pos + instructionLength);
-      pos += instructionLength;
-    }
-    return [pos - spos, new CompositeGlyph({
-      flags,
-      glyphIndex,
-      argument1,
-      argument2,
-      transf,
-      instructions
-    })];
-  }
-  getSize() {
-    let size = 2 + 2 + this.transf.length * 2;
-    if (this.flags & WE_HAVE_INSTRUCTIONS) {
-      size += 2 + this.instructions.length;
-    }
-    size += 2;
-    if (this.flags & 2) {
-      if (!(this.argument1 >= -128 && this.argument1 <= 127 && this.argument2 >= -128 && this.argument2 <= 127)) {
-        size += 2;
-      }
-    } else if (!(this.argument1 >= 0 && this.argument1 <= 255 && this.argument2 >= 0 && this.argument2 <= 255)) {
-      size += 2;
-    }
-    return size;
-  }
-  write(pos, buf) {
-    const spos = pos;
-    if (this.flags & ARGS_ARE_XY_VALUES) {
-      if (!(this.argument1 >= -128 && this.argument1 <= 127 && this.argument2 >= -128 && this.argument2 <= 127)) {
-        this.flags |= ARG_1_AND_2_ARE_WORDS;
-      }
-    } else if (!(this.argument1 >= 0 && this.argument1 <= 255 && this.argument2 >= 0 && this.argument2 <= 255)) {
-      this.flags |= ARG_1_AND_2_ARE_WORDS;
-    }
-    buf.setUint16(pos, this.flags);
-    buf.setUint16(pos + 2, this.glyphIndex);
-    pos += 4;
-    if (this.flags & ARG_1_AND_2_ARE_WORDS) {
-      if (this.flags & ARGS_ARE_XY_VALUES) {
-        buf.setInt16(pos, this.argument1);
-        buf.setInt16(pos + 2, this.argument2);
-      } else {
-        buf.setUint16(pos, this.argument1);
-        buf.setUint16(pos + 2, this.argument2);
-      }
-      pos += 4;
-    } else {
-      buf.setUint8(pos, this.argument1);
-      buf.setUint8(pos + 1, this.argument2);
-      pos += 2;
-    }
-    if (this.flags & WE_HAVE_INSTRUCTIONS) {
-      buf.setUint16(pos, this.instructions.length);
-      pos += 2;
-      if (this.instructions.length) {
-        new Uint8Array(buf.buffer, 0, buf.buffer.byteLength).set(this.instructions, pos);
-        pos += this.instructions.length;
-      }
-    }
-    return pos - spos;
-  }
-  scale(x, factor) {}
-}
-
 ;// ./src/core/opentype_file_builder.js
 
 const OTF_HEADER_SIZE = 12;
@@ -25359,6 +25517,8 @@ class Type1Parser {
       }
     };
     let token, length, data, lenIV;
+    let subrsParsed = false;
+    let charStringsParsed = false;
     while ((token = this.getToken()) !== null) {
       if (token !== "/") {
         continue;
@@ -25366,6 +25526,10 @@ class Type1Parser {
       token = this.getToken();
       switch (token) {
         case "CharStrings":
+          if (charStringsParsed) {
+            break;
+          }
+          charStringsParsed = true;
           this.getToken();
           this.getToken();
           this.getToken();
@@ -25398,6 +25562,10 @@ class Type1Parser {
           }
           break;
         case "Subrs":
+          if (subrsParsed) {
+            break;
+          }
+          subrsParsed = true;
           this.readInt();
           this.getToken();
           while (this.getToken() === "dup") {
@@ -25476,6 +25644,214 @@ class Type1Parser {
         }
       }
     }
+    return program;
+  }
+  extractCidKeyedFontProgram(properties) {
+    const stream = this.stream;
+    const privateData = new Map([["lenIV", 4]]);
+    const program = {
+      subrs: [],
+      charstrings: [],
+      properties: {
+        privateData
+      }
+    };
+    let cidCount = 0;
+    let cidMapOffset = -1;
+    let fdBytes = 1;
+    let gdBytes = 0;
+    let subrMapOffset = -1;
+    let sdBytes = 0;
+    let subrCount = 0;
+    let startDataLength = 0;
+    let startDataIsHex = false;
+    let foundStartData = false;
+    const previousTokens = [];
+    function rememberToken(value) {
+      previousTokens.push(value);
+      if (previousTokens.length > 4) {
+        previousTokens.shift();
+      }
+    }
+    let token;
+    while ((token = this.getToken()) !== null) {
+      if (token === "StartData") {
+        const dataType = previousTokens.at(-3);
+        const dataLength = previousTokens.at(-1);
+        if (previousTokens.at(-4) !== "(" || previousTokens.at(-2) !== ")" || dataType !== "Binary" && dataType !== "Hex" || !/^\d+$/.test(dataLength)) {
+          return null;
+        }
+        startDataLength = parseInt(dataLength, 10);
+        if (startDataLength <= 0) {
+          return null;
+        }
+        startDataIsHex = dataType === "Hex";
+        foundStartData = true;
+        break;
+      }
+      rememberToken(token);
+      if (token !== "/") {
+        continue;
+      }
+      token = this.getToken();
+      rememberToken(token);
+      switch (token) {
+        case "FontMatrix":
+          properties.fontMatrix = this.readNumberArray();
+          break;
+        case "FontBBox":
+          const fontBBox = this.readNumberArray();
+          properties.ascent = Math.max(fontBBox[3], fontBBox[1]);
+          properties.descent = Math.min(fontBBox[1], fontBBox[3]);
+          properties.ascentScaled = true;
+          break;
+        case "CIDCount":
+          cidCount = this.readInt();
+          break;
+        case "CIDMapOffset":
+          cidMapOffset = this.readInt();
+          break;
+        case "FDBytes":
+          fdBytes = this.readInt();
+          break;
+        case "GDBytes":
+          gdBytes = this.readInt();
+          break;
+        case "SubrMapOffset":
+          subrMapOffset = this.readInt();
+          break;
+        case "SDBytes":
+          sdBytes = this.readInt();
+          break;
+        case "SubrCount":
+          subrCount = this.readInt();
+          break;
+        case "BlueValues":
+        case "OtherBlues":
+        case "FamilyBlues":
+        case "FamilyOtherBlues":
+          this.readNumberArray();
+          break;
+        case "StemSnapH":
+        case "StemSnapV":
+          privateData.set(token, this.readNumberArray());
+          break;
+        case "StdHW":
+        case "StdVW":
+          privateData.set(token, this.readNumberArray()[0]);
+          break;
+        case "BlueShift":
+        case "lenIV":
+        case "BlueFuzz":
+        case "BlueScale":
+        case "LanguageGroup":
+          privateData.set(token, this.readNumber());
+          break;
+        case "ExpansionFactor":
+          privateData.set(token, this.readNumber() || 0.06);
+          break;
+        case "ForceBold":
+          privateData.set(token, this.readBoolean());
+          break;
+      }
+    }
+    if (!foundStartData || cidCount <= 0 || cidMapOffset < 0 || fdBytes < 0 || fdBytes > 4 || gdBytes < 1 || gdBytes > 4) {
+      return null;
+    }
+    const maxLength = stream.end - stream.pos;
+    if (startDataLength > maxLength) {
+      if (!startDataIsHex) {
+        startDataLength = maxLength;
+      } else if (startDataLength > 2 * maxLength) {
+        return null;
+      }
+    }
+    let binary = stream.getBytes(startDataIsHex ? undefined : startDataLength);
+    if (startDataIsHex) {
+      const decoded = new Uint8Array(startDataLength);
+      let digit1 = -1,
+        j = 0;
+      for (let i = 0, ii = binary.length; i < ii && j < startDataLength; i++) {
+        const digit = binary[i];
+        if (!isHexDigit(digit)) {
+          continue;
+        }
+        if (digit1 < 0) {
+          digit1 = digit;
+          continue;
+        }
+        decoded[j++] = parseInt(String.fromCharCode(digit1, digit), 16);
+        digit1 = -1;
+      }
+      if (j !== startDataLength) {
+        return null;
+      }
+      binary = decoded;
+    }
+    const lenIV = privateData.get("lenIV");
+    const cidEntrySize = fdBytes + gdBytes;
+    const subrs = [];
+    function readUint(offset, byteCount) {
+      let n = 0;
+      for (let i = 0; i < byteCount; i++) {
+        n = n << 8 | binary[offset + i];
+      }
+      return n >>> 0;
+    }
+    if (cidMapOffset + (cidCount + 1) * cidEntrySize > binary.length || subrCount > 0 && (subrMapOffset < 0 || sdBytes < 1 || sdBytes > 4 || subrMapOffset + (subrCount + 1) * sdBytes > binary.length)) {
+      return null;
+    }
+    if (fdBytes > 0) {
+      for (let cid = 0; cid < cidCount; cid++) {
+        if (readUint(cidMapOffset + cid * cidEntrySize, fdBytes) !== 0) {
+          return null;
+        }
+      }
+    }
+    if (subrCount > 0) {
+      const subrOffsets = new Array(subrCount + 1);
+      for (let i = 0; i <= subrCount; i++) {
+        subrOffsets[i] = readUint(subrMapOffset + i * sdBytes, sdBytes);
+      }
+      for (let i = 0; i < subrCount; i++) {
+        const start = subrOffsets[i];
+        const end = subrOffsets[i + 1];
+        if (end > binary.length || end < start) {
+          subrs[i] = new Uint8Array(0);
+          continue;
+        }
+        subrs[i] = this.readCharStrings(binary.subarray(start, end), lenIV);
+      }
+    }
+    const charstrings = [];
+    let prevOffset = readUint(cidMapOffset + fdBytes, gdBytes);
+    for (let cid = 0; cid < cidCount; cid++) {
+      const nextOffset = readUint(cidMapOffset + (cid + 1) * cidEntrySize + fdBytes, gdBytes);
+      const glyphName = cid === 0 ? ".notdef" : `cid${cid}`;
+      if (nextOffset > prevOffset && nextOffset <= binary.length) {
+        const encoded = this.readCharStrings(binary.subarray(prevOffset, nextOffset), lenIV);
+        const charString = new Type1CharString();
+        const error = charString.convert(encoded, subrs, this.seacAnalysisEnabled);
+        charstrings.push({
+          glyphName,
+          charstring: error ? [14] : charString.output,
+          width: charString.width,
+          lsb: charString.lsb,
+          seac: charString.seac
+        });
+      } else {
+        const notDef = charstrings[0];
+        charstrings.push({
+          glyphName,
+          charstring: notDef?.charstring.slice() || [0x8b, 0x0e],
+          width: notDef?.width || 0,
+          lsb: notDef?.lsb || 0
+        });
+      }
+      prevOffset = nextOffset;
+    }
+    program.subrs = subrs;
+    program.charstrings = charstrings;
     return program;
   }
   extractFontHeader(properties) {
@@ -25619,9 +25995,33 @@ function getEexecBlock(stream, suggestedLength) {
     length: eexecBytes.length
   };
 }
+function isCidKeyedType1File(file) {
+  const sample = file.peekBytes(2048);
+  if (sample.length < 2 || sample[0] !== 0x25 || sample[1] !== 0x21) {
+    return false;
+  }
+  const text = bytesToString(sample);
+  return text.includes("Resource-CIDFont") || /\/CIDFontType\s+0\b/.test(text);
+}
 class Type1Font {
   #rawFileLength;
   constructor(name, file, properties) {
+    let data;
+    if (properties.composite && isCidKeyedType1File(file)) {
+      data = this.#parseCidKeyedType1(file, properties);
+    }
+    data ||= this.#parseType1(file, properties);
+    for (const key in data.properties) {
+      properties[key] = data.properties[key];
+    }
+    const charstrings = data.charstrings;
+    const type2Charstrings = this.getType2Charstrings(charstrings);
+    const subrs = this.getType2Subrs(data.subrs);
+    this.charstrings = charstrings;
+    this.data = this.wrap(name, type2Charstrings, this.charstrings, subrs, properties);
+    this.seacs = this.getSeacs(data.charstrings);
+  }
+  #parseType1(file, properties) {
     const PFB_HEADER_SIZE = 6;
     let headerBlockLength = properties.length1;
     let eexecBlockLength = properties.length2;
@@ -25641,16 +26041,21 @@ class Type1Font {
     const eexecBlock = getEexecBlock(file, eexecBlockLength);
     const eexecBlockParser = new Type1Parser(eexecBlock.stream, true, SEAC_ANALYSIS_ENABLED);
     const data = eexecBlockParser.extractFontProgram(properties);
-    for (const key in data.properties) {
-      properties[key] = data.properties[key];
-    }
     this.#rawFileLength = headerBlock.length + eexecBlock.length;
-    const charstrings = data.charstrings;
-    const type2Charstrings = this.getType2Charstrings(charstrings);
-    const subrs = this.getType2Subrs(data.subrs);
-    this.charstrings = charstrings;
-    this.data = this.wrap(name, type2Charstrings, this.charstrings, subrs, properties);
-    this.seacs = this.getSeacs(data.charstrings);
+    return data;
+  }
+  #parseCidKeyedType1(file, properties) {
+    const fileStart = file.pos;
+    const length = file.end - fileStart;
+    const parser = new Type1Parser(file, false, SEAC_ANALYSIS_ENABLED);
+    const data = parser.extractCidKeyedFontProgram(properties);
+    if (!data) {
+      file.pos = fileStart;
+      warn("Type1Font: unable to parse CID-keyed Type 1 font.");
+      return null;
+    }
+    this.#rawFileLength = length;
+    return data;
   }
   get numGlyphs() {
     return this.charstrings.length + 1;
@@ -26319,6 +26724,10 @@ function createCmapTable(glyphs, toUnicodeExtraMap, numGlyphs) {
 function validateOS2Table(os2, file) {
   file.pos = (file.start || 0) + os2.offset;
   const version = file.getUint16();
+  const minLength = [78, 86, 96, 96, 96, 100][version];
+  if (minLength === undefined || os2.length < minLength) {
+    return false;
+  }
   file.skip(60);
   const selection = file.getUint16();
   if (version < 4 && selection & 0x0300) {
@@ -26680,10 +27089,10 @@ class Font {
         this.capHeight = metrics.capHeight / PDF_GLYPH_SPACE_UNITS;
       }
     }
-    this.bold = /bold/gi.test(fontName);
-    this.italic = /oblique|italic/gi.test(fontName);
-    this.black = /Black/g.test(name);
-    const isNarrow = /Narrow/g.test(name);
+    this.bold = /bold/i.test(fontName);
+    this.italic = /oblique|italic/i.test(fontName);
+    this.black = /Black/.test(name);
+    const isNarrow = /Narrow/.test(name);
     this.remeasure = (!isStandardFont || isNarrow) && Object.keys(this.widths).length > 0;
     if ((isStandardFont || isMappedToStandardFont) && type === "CIDFontType2" && this.cidEncoding.startsWith("Identity-")) {
       const cidToGidMap = properties.cidToGidMap;
@@ -27366,11 +27775,15 @@ class Font {
       if (last.offset !== 0 && last.endOffset === 0) {
         last.endOffset = oldGlyfDataLength;
       }
+      const droppedGlyphs = pruneCompositeGlyphCycles(oldGlyfData, locaEntries, numGlyphs);
       const missingGlyphs = Object.create(null);
       let writeOffset = 0;
       itemEncode(locaData, 0, writeOffset);
       for (i = 0, j = itemSize; i < numGlyphs; i++, j += itemSize) {
-        const glyphProfile = sanitizeGlyph(oldGlyfData, locaEntries[i].offset, locaEntries[i].endOffset, newGlyfData, writeOffset, hintsValid);
+        const glyphProfile = droppedGlyphs.has(i) ? {
+          length: 0,
+          sizeOfInstructions: 0
+        } : sanitizeGlyph(oldGlyfData, locaEntries[i].offset, locaEntries[i].endOffset, newGlyfData, writeOffset, hintsValid);
         const newLength = glyphProfile.length;
         if (newLength === 0) {
           missingGlyphs[i] = true;
@@ -27772,8 +28185,14 @@ class Font {
       tables = readTables(font, header.numTables);
     }
     const isTrueType = !tables["CFF "];
+    let parsedCff = null;
     if (!isTrueType) {
-      if (header.version === "OTTO" && !properties.composite || !tables.head || !tables.hhea || !tables.maxp || !tables.post) {
+      try {
+        parsedCff = new CFFParser(new Stream(tables["CFF "].data), properties, SEAC_ANALYSIS_ENABLED).parse();
+      } catch {
+        warn("Failed to parse font " + properties.loadedName);
+      }
+      if (header.version === "OTTO" && (!properties.composite || properties.fontFileN === "FontFile3" && parsedCff?.isCIDFont) || !tables.head || !tables.hhea || !tables.maxp || !tables.post) {
         return this.convert(name, new CFFFont(new Stream(tables["CFF "].data), properties), properties);
       }
       delete tables.glyf;
@@ -27799,14 +28218,11 @@ class Font {
       throw new FormatError('Required "maxp" table is not found');
     }
     let numGlyphsFromCFF;
-    if (!isTrueType) {
+    if (parsedCff) {
       try {
-        const parser = new CFFParser(new Stream(tables["CFF "].data), properties, SEAC_ANALYSIS_ENABLED);
-        const cff = parser.parse();
-        cff.duplicateFirstGlyph();
-        const compiler = new CFFCompiler(cff);
-        tables["CFF "].data = compiler.compile();
-        numGlyphsFromCFF = cff.charStringCount;
+        parsedCff.duplicateFirstGlyph();
+        tables["CFF "].data = new CFFCompiler(parsedCff).compile();
+        numGlyphsFromCFF = parsedCff.charStringCount;
       } catch {
         warn("Failed to compile font " + properties.loadedName);
       }
@@ -27898,6 +28314,19 @@ class Font {
       maxFunctionDefs = font.getUint16();
       font.pos += 4;
       maxSizeOfInstructions = font.getUint16();
+    } else if (isTrueType && version === 0x00005000) {
+      const newMaxp = new Uint8Array(32);
+      writeUint32(newMaxp, 0, 0x00010000);
+      newMaxp[4] = numGlyphs >> 8 & 0xff;
+      newMaxp[5] = numGlyphs & 0xff;
+      newMaxp.fill(0xff, 6, 14);
+      newMaxp[15] = 2;
+      newMaxp[28] = 0xff;
+      newMaxp[29] = 0xff;
+      newMaxp[31] = 0x10;
+      tables.maxp.data = newMaxp;
+      tables.maxp.length = 32;
+      version = 0x00010000;
     }
     tables.maxp.data[4] = numGlyphsOut >> 8;
     tables.maxp.data[5] = numGlyphsOut & 255;
@@ -28828,7 +29257,7 @@ class lexer_Lexer {
     this.data = data;
     this.pos = 0;
     this.len = data.length;
-    this._numberPattern = /[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/y;
+    this._numberPattern = /[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/iy;
     this._identifierPattern = /[a-z]+/y;
   }
   _skipComment() {
@@ -32095,6 +32524,10 @@ const NORMAL = {
   style: "normal",
   weight: "normal"
 };
+const MEDIUM = {
+  style: "normal",
+  weight: "500"
+};
 const BOLD = {
   style: "normal",
   weight: "bold"
@@ -32242,6 +32675,78 @@ const substitutionMap = new Map([["Times-Roman", {
   ultimate: "serif"
 }], ["\xD0\xC2\xCB\xCE", {
   alias: "\xCB\xCE\xCC\xE5"
+}], ["HeiseiMin-W3", {
+  local: ["Hiragino Mincho ProN", "Hiragino Mincho Pro", "Yu Mincho", "YuMincho", "Source Han Serif JP", "Noto Serif JP", "Noto Serif CJK JP", "IPAexMincho", "IPAMincho", "Takao Mincho", "MS Mincho", "MS PMincho"],
+  style: NORMAL,
+  ultimate: "serif"
+}], ["HeiseiKakuGo-W5", {
+  local: ["Hiragino Kaku Gothic ProN", "Hiragino Kaku Gothic Pro", "Hiragino Sans", "Yu Gothic", "YuGothic", "Source Han Sans JP", "Noto Sans JP", "Noto Sans CJK JP", "IPAexGothic", "IPAGothic", "Takao Gothic", "Meiryo", "MS Gothic", "MS PGothic"],
+  style: MEDIUM,
+  ultimate: "sans-serif"
+}], ["HeiseiMin-W3-Acro", {
+  alias: "HeiseiMin-W3"
+}], ["HeiseiKakuGo-W5-Acro", {
+  alias: "HeiseiKakuGo-W5"
+}], ["KozMinPro-Regular", {
+  alias: "HeiseiMin-W3"
+}], ["KozMinProVI-Regular", {
+  alias: "HeiseiMin-W3"
+}], ["KozMinPr6N-Regular", {
+  alias: "HeiseiMin-W3"
+}], ["KozGoPro-Regular", {
+  alias: "HeiseiKakuGo-W5"
+}], ["KozGoProVI-Regular", {
+  alias: "HeiseiKakuGo-W5"
+}], ["KozGoPr6N-Regular", {
+  alias: "HeiseiKakuGo-W5"
+}], ["STSong-Light", {
+  local: ["STSong", "Songti SC", "Source Han Serif SC", "Source Han Serif CN", "Noto Serif SC", "Noto Serif CJK SC", "AR PL UMing CN", "SimSun", "NSimSun"],
+  style: NORMAL,
+  ultimate: "serif"
+}], ["STHeiti-Regular", {
+  local: ["STHeiti", "Heiti SC", "PingFang SC", "Source Han Sans SC", "Source Han Sans CN", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", "SimHei", "WenQuanYi Zen Hei"],
+  style: NORMAL,
+  ultimate: "sans-serif"
+}], ["STSongStd-Light", {
+  alias: "STSong-Light"
+}], ["AdobeSongStd-Light", {
+  alias: "STSong-Light"
+}], ["AdobeHeitiStd-Regular", {
+  alias: "STHeiti-Regular"
+}], ["AdobeKaitiStd-Regular", {
+  alias: "\xBF\xAC\xCC\xE5"
+}], ["AdobeFangsongStd-Regular", {
+  alias: "\xB7\xC2\xCB\xCE"
+}], ["MSung-Light", {
+  local: ["Songti TC", "LiSong Pro", "Source Han Serif TC", "Source Han Serif TW", "Noto Serif TC", "Noto Serif CJK TC", "AR PL UMing TW", "PMingLiU", "MingLiU", "MingLiU_HKSCS"],
+  style: NORMAL,
+  ultimate: "serif"
+}], ["MHei-Medium", {
+  local: ["Heiti TC", "STHeiti", "Source Han Sans TC", "Source Han Sans TW", "Noto Sans TC", "Noto Sans CJK TC", "PingFang TC", "Microsoft JhengHei"],
+  style: MEDIUM,
+  ultimate: "sans-serif"
+}], ["MSungStd-Light", {
+  alias: "MSung-Light"
+}], ["AdobeMingStd-Light", {
+  alias: "MSung-Light"
+}], ["HYSMyeongJo-Medium", {
+  local: ["AppleMyungjo", "Source Han Serif KR", "Noto Serif KR", "Noto Serif CJK KR", "Nanum Myeongjo", "Batang"],
+  style: MEDIUM,
+  ultimate: "serif"
+}], ["HYGoThic-Medium", {
+  local: ["Apple SD Gothic Neo", "AppleGothic", "Source Han Sans KR", "Noto Sans KR", "Noto Sans CJK KR", "Nanum Gothic", "Malgun Gothic", "Dotum", "Gulim"],
+  style: MEDIUM,
+  ultimate: "sans-serif"
+}], ["HYSMyeongJoStd-Medium", {
+  alias: "HYSMyeongJo-Medium"
+}], ["AdobeMyungjoStd-Medium", {
+  alias: "HYSMyeongJo-Medium"
+}], ["HYGoThic-Bold", {
+  alias: "HYGoThic-Medium",
+  style: BOLD
+}], ["AdobeGothicStd-Bold", {
+  alias: "HYGoThic-Medium",
+  style: BOLD
 }]]);
 const fontAliases = new Map([["Arial-Black", "ArialBlack"]]);
 function getStyleToAppend(style) {
@@ -32342,8 +32847,8 @@ function getFontSubstitution(systemFontCache, idFactory, localFontPath, baseFont
       systemFontCache.set(key, null);
       return null;
     }
-    const bold = /bold/gi.test(baseFontName);
-    const italic = /oblique|italic/gi.test(baseFontName);
+    const bold = /bold/i.test(baseFontName);
+    const italic = /oblique|italic/i.test(baseFontName);
     const style = bold && italic && BOLDITALIC || bold && BOLD || italic && ITALIC || NORMAL;
     substitutionInfo = {
       css: `"${getFamilyName(baseFontName)}",${loadedName}`,
@@ -32469,6 +32974,98 @@ class MurmurHash3_64 {
     h1 ^= h2 >>> 1;
     return (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0");
   }
+}
+
+;// ./src/core/evaluator_utils.js
+
+
+function _parseVisibilityExpression(xref, array, nestingCounter, currentResult) {
+  const MAX_NESTING = 10;
+  if (++nestingCounter > MAX_NESTING) {
+    warn("Visibility expression is too deeply nested");
+    return;
+  }
+  const length = array.length;
+  const operator = xref.fetchIfRef(array[0]);
+  if (length < 2 || !(operator instanceof Name)) {
+    warn("Invalid visibility expression");
+    return;
+  }
+  switch (operator.name) {
+    case "And":
+    case "Or":
+    case "Not":
+      currentResult.push(operator.name);
+      break;
+    default:
+      warn(`Invalid operator ${operator.name} in visibility expression`);
+      return;
+  }
+  for (let i = 1; i < length; i++) {
+    const raw = array[i];
+    const object = xref.fetchIfRef(raw);
+    if (Array.isArray(object)) {
+      const nestedResult = [];
+      currentResult.push(nestedResult);
+      _parseVisibilityExpression(xref, object, nestingCounter, nestedResult);
+    } else if (raw instanceof Ref) {
+      currentResult.push(raw.toString());
+    }
+  }
+}
+function parseMarkedContentProps(xref, contentProperties, resources) {
+  let optionalContent;
+  if (contentProperties instanceof Name) {
+    const properties = resources.get("Properties");
+    optionalContent = properties.get(contentProperties.name);
+  } else if (contentProperties instanceof Dict) {
+    optionalContent = contentProperties;
+  } else {
+    throw new FormatError("Optional content properties malformed.");
+  }
+  const optionalContentType = optionalContent.get("Type")?.name;
+  if (optionalContentType === "OCG") {
+    return {
+      type: optionalContentType,
+      id: optionalContent.objId
+    };
+  } else if (optionalContentType === "OCMD") {
+    const expression = optionalContent.get("VE");
+    if (Array.isArray(expression)) {
+      const result = [];
+      _parseVisibilityExpression(xref, expression, 0, result);
+      if (result.length > 0) {
+        return {
+          type: "OCMD",
+          expression: result
+        };
+      }
+    }
+    const optionalContentGroups = optionalContent.get("OCGs");
+    if (Array.isArray(optionalContentGroups) || optionalContentGroups instanceof Dict) {
+      const groupIds = [];
+      if (Array.isArray(optionalContentGroups)) {
+        for (const ocg of optionalContentGroups) {
+          groupIds.push(ocg.toString());
+        }
+      } else {
+        groupIds.push(optionalContentGroups.objId);
+      }
+      const p = optionalContent.get("P");
+      return {
+        type: optionalContentType,
+        ids: groupIds,
+        policy: p instanceof Name ? p.name : null,
+        expression: null
+      };
+    } else if (optionalContentGroups instanceof Ref) {
+      return {
+        type: optionalContentType,
+        id: optionalContentGroups.toString()
+      };
+    }
+  }
+  return null;
 }
 
 ;// ./src/core/image.js
@@ -33333,6 +33930,7 @@ class PDFImage {
 
 
 
+
 const DefaultPartialEvaluatorOptions = Object.freeze({
   maxImageSize: -1,
   disableFontFace: false,
@@ -33668,6 +34266,8 @@ class PartialEvaluator {
       if (smask?.backdrop) {
         colorSpace ||= ColorSpaceUtils.rgb;
         smask.backdrop = colorSpace.getRgbHex(smask.backdrop, 0);
+      } else if (smask?.subtype === "Luminosity") {
+        smask.backdrop = "#000000";
       }
       newOpList = new CheckedOperatorList();
     } else {
@@ -34421,92 +35021,8 @@ class PartialEvaluator {
     }
     throw new FormatError(`Unknown PatternName: ${patternName}`);
   }
-  _parseVisibilityExpression(array, nestingCounter, currentResult) {
-    const MAX_NESTING = 10;
-    if (++nestingCounter > MAX_NESTING) {
-      warn("Visibility expression is too deeply nested");
-      return;
-    }
-    const length = array.length;
-    const operator = this.xref.fetchIfRef(array[0]);
-    if (length < 2 || !(operator instanceof Name)) {
-      warn("Invalid visibility expression");
-      return;
-    }
-    switch (operator.name) {
-      case "And":
-      case "Or":
-      case "Not":
-        currentResult.push(operator.name);
-        break;
-      default:
-        warn(`Invalid operator ${operator.name} in visibility expression`);
-        return;
-    }
-    for (let i = 1; i < length; i++) {
-      const raw = array[i];
-      const object = this.xref.fetchIfRef(raw);
-      if (Array.isArray(object)) {
-        const nestedResult = [];
-        currentResult.push(nestedResult);
-        this._parseVisibilityExpression(object, nestingCounter, nestedResult);
-      } else if (raw instanceof Ref) {
-        currentResult.push(raw.toString());
-      }
-    }
-  }
   async parseMarkedContentProps(contentProperties, resources) {
-    let optionalContent;
-    if (contentProperties instanceof Name) {
-      const properties = resources.get("Properties");
-      optionalContent = properties.get(contentProperties.name);
-    } else if (contentProperties instanceof Dict) {
-      optionalContent = contentProperties;
-    } else {
-      throw new FormatError("Optional content properties malformed.");
-    }
-    const optionalContentType = optionalContent.get("Type")?.name;
-    if (optionalContentType === "OCG") {
-      return {
-        type: optionalContentType,
-        id: optionalContent.objId
-      };
-    } else if (optionalContentType === "OCMD") {
-      const expression = optionalContent.get("VE");
-      if (Array.isArray(expression)) {
-        const result = [];
-        this._parseVisibilityExpression(expression, 0, result);
-        if (result.length > 0) {
-          return {
-            type: "OCMD",
-            expression: result
-          };
-        }
-      }
-      const optionalContentGroups = optionalContent.get("OCGs");
-      if (Array.isArray(optionalContentGroups) || optionalContentGroups instanceof Dict) {
-        const groupIds = [];
-        if (Array.isArray(optionalContentGroups)) {
-          for (const ocg of optionalContentGroups) {
-            groupIds.push(ocg.toString());
-          }
-        } else {
-          groupIds.push(optionalContentGroups.objId);
-        }
-        return {
-          type: optionalContentType,
-          ids: groupIds,
-          policy: optionalContent.get("P") instanceof Name ? optionalContent.get("P").name : null,
-          expression: null
-        };
-      } else if (optionalContentGroups instanceof Ref) {
-        return {
-          type: optionalContentType,
-          id: optionalContentGroups.toString()
-        };
-      }
-    }
-    return null;
+    return parseMarkedContentProps(this.xref, contentProperties, resources);
   }
   async getOperatorList({
     stream,
@@ -36316,7 +36832,7 @@ class PartialEvaluator {
   }
   isSerifFont(baseFontName) {
     const fontNameWoStyle = baseFontName.split("-", 1)[0];
-    return fontNameWoStyle in getSerifFonts() || /serif/gi.test(fontNameWoStyle);
+    return fontNameWoStyle in getSerifFonts() || /serif/i.test(fontNameWoStyle);
   }
   getBaseFontMetrics(name) {
     let defaultWidth = 0;
@@ -36499,6 +37015,8 @@ class PartialEvaluator {
     if (!descriptor) {
       if (isType3Font) {
         descriptor = Dict.empty;
+      } else if (composite) {
+        descriptor = Dict.empty;
       } else {
         let baseFontName = dict.get("BaseFont");
         if (!(baseFontName instanceof Name)) {
@@ -36577,9 +37095,15 @@ class PartialEvaluator {
     if (!(fontName instanceof Name)) {
       throw new FormatError("invalid font name");
     }
-    let fontFile, subtype, length1, length2, length3;
+    let fontFile, fontFileN, subtype, length1, length2, length3;
     try {
-      fontFile = descriptor.get("FontFile", "FontFile2", "FontFile3");
+      for (const n of ["FontFile", "FontFile2", "FontFile3"]) {
+        fontFile = descriptor.get(n);
+        if (fontFile) {
+          fontFileN = n;
+          break;
+        }
+      }
       if (fontFile) {
         if (!(fontFile instanceof BaseStream)) {
           throw new FormatError("FontFile should be a stream");
@@ -36667,6 +37191,7 @@ class PartialEvaluator {
       name: fontName.name,
       subtype,
       file: fontFile,
+      fontFileN,
       length1,
       length2,
       length3,
@@ -36705,7 +37230,19 @@ class PartialEvaluator {
     }
     const newProperties = await this.extractDataStructures(dict, properties);
     this.extractWidths(dict, descriptor, newProperties);
-    return new Font(fontName.name, fontFile, newProperties, this.options);
+    const font = new Font(fontName.name, fontFile, newProperties, this.options);
+    if (font.missingFile && !font.systemFontInfo && !isType3Font && this.options.useSystemFonts) {
+      const standardFontName = getStandardFontName(fontName.name);
+      const substitution = getFontSubstitution(this.systemFontCache, this.idFactory, this.options.standardFontDataUrl, fontName.name, standardFontName, type);
+      if (substitution) {
+        if (substitution.guessFallback) {
+          substitution.guessFallback = false;
+          substitution.css += `,${font.fallbackName}`;
+        }
+        font.systemFontInfo = substitution;
+      }
+    }
+    return font;
   }
   static buildFontPaths(font, glyphs, handler, evaluatorOptions) {
     function buildPath(fontChar) {
@@ -41037,6 +41574,206 @@ class Catalog {
   }
 }
 
+;// ./src/core/editor/pdf_images.js
+
+
+
+const FLATE_COLOR_COUNT_THRESHOLD = 16384;
+function createImageDict(xref, width, height, colorSpace) {
+  const image = new Dict(xref);
+  image.set("Type", Name.get("XObject"));
+  image.set("Subtype", Name.get("Image"));
+  image.set("BitsPerComponent", 8);
+  image.setIfName("ColorSpace", colorSpace);
+  image.set("Width", width);
+  image.set("Height", height);
+  return image;
+}
+function createRawImage(buffer, dict) {
+  return new Stream(buffer, 0, buffer.length, dict);
+}
+function paethPredictor(left, above, upperLeft) {
+  const p = left + above - upperLeft;
+  const pa = Math.abs(p - left);
+  const pb = Math.abs(p - above);
+  const pc = Math.abs(p - upperLeft);
+  if (pa <= pb && pa <= pc) {
+    return left;
+  }
+  return pb <= pc ? above : upperLeft;
+}
+function applyPNGOptimumFilter(data, width, height, bytesPerPixel) {
+  const rowSize = width * bytesPerPixel;
+  const out = new Uint8Array(height * (rowSize + 1));
+  const candidates = [new Uint8Array(rowSize), new Uint8Array(rowSize), new Uint8Array(rowSize), new Uint8Array(rowSize), new Uint8Array(rowSize)];
+  for (let y = 0; y < height; y++) {
+    const rowOffset = y * rowSize;
+    const prevRowOffset = rowOffset - rowSize;
+    const scores = [0, 0, 0, 0, 0];
+    for (let x = 0; x < rowSize; x++) {
+      const offset = rowOffset + x;
+      const cur = data[offset];
+      const left = x >= bytesPerPixel ? data[offset - bytesPerPixel] : 0;
+      const above = y > 0 ? data[prevRowOffset + x] : 0;
+      const upperLeft = y > 0 && x >= bytesPerPixel ? data[prevRowOffset + x - bytesPerPixel] : 0;
+      candidates[0][x] = cur;
+      candidates[1][x] = cur - left & 0xff;
+      candidates[2][x] = cur - above & 0xff;
+      candidates[3][x] = cur - (left + above >> 1) & 0xff;
+      candidates[4][x] = cur - paethPredictor(left, above, upperLeft) & 0xff;
+      for (let f = 0; f < 5; f++) {
+        const v = candidates[f][x];
+        scores[f] += v < 128 ? v : 256 - v;
+      }
+    }
+    let bestFilter = 0;
+    for (let f = 1; f < 5; f++) {
+      if (scores[f] < scores[bestFilter]) {
+        bestFilter = f;
+      }
+    }
+    const outOffset = y * (rowSize + 1);
+    out[outOffset] = bestFilter;
+    out.set(candidates[bestFilter], outOffset + 1);
+  }
+  return out;
+}
+async function deflate(bytes) {
+  const cs = new CompressionStream("deflate");
+  const writer = cs.writable.getWriter();
+  const writePromise = (async () => {
+    try {
+      await writer.ready;
+      await writer.write(bytes);
+      await writer.ready;
+      await writer.close();
+    } catch (reason) {
+      await writer.abort(reason).catch(() => {});
+      throw reason;
+    }
+  })();
+  const [compressed] = await Promise.all([new Response(cs.readable).bytes(), writePromise.then(() => null)]);
+  return compressed;
+}
+async function createPNGLikeImage(buffer, width, height, dict) {
+  const bytesPerPixel = buffer.length / (width * height);
+  let compressed;
+  if (typeof CompressionStream === "function") {
+    try {
+      const filtered = applyPNGOptimumFilter(buffer, width, height, bytesPerPixel);
+      compressed = await deflate(filtered);
+    } catch {}
+  }
+  if (!compressed) {
+    return createRawImage(buffer, dict);
+  }
+  dict.setIfName("Filter", "FlateDecode");
+  const decodeParms = new Dict(dict.xref);
+  decodeParms.set("Predictor", 15);
+  decodeParms.set("Columns", width);
+  decodeParms.set("Colors", bytesPerPixel);
+  decodeParms.set("BitsPerComponent", 8);
+  dict.set("DecodeParms", decodeParms);
+  return createRawImage(compressed, dict);
+}
+async function createImage(bitmap, xref, {
+  closeBitmap = false
+} = {}) {
+  const {
+    width,
+    height
+  } = bitmap;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    if (closeBitmap) {
+      bitmap.close?.();
+    }
+    throw new Error(`createImage: invalid bitmap dimensions ${width}x${height}`);
+  }
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext("2d", {
+    alpha: true,
+    willReadFrequently: true
+  });
+  let data;
+  try {
+    ctx.drawImage(bitmap, 0, 0);
+    data = ctx.getImageData(0, 0, width, height).data;
+  } finally {
+    if (closeBitmap) {
+      bitmap.close?.();
+    }
+  }
+  const buf32 = new Uint32Array(data.buffer, data.byteOffset, data.byteLength >> 2);
+  const isLE = FeatureTest.isLittleEndian;
+  const rgbMask = isLE ? 0x00ffffff : 0xffffff00;
+  const colorCounter = new Set();
+  let hasAlpha = false;
+  let useFlate = true;
+  for (let i = 0, ii = buf32.length; i < ii; i++) {
+    const v = buf32[i];
+    if ((isLE ? v >>> 24 : v & 0xff) !== 0xff) {
+      hasAlpha = true;
+      break;
+    }
+    if (useFlate) {
+      colorCounter.add((v & rgbMask) >>> 0);
+      if (colorCounter.size > FLATE_COLOR_COUNT_THRESHOLD) {
+        useFlate = false;
+        colorCounter.clear();
+      }
+    }
+  }
+  if (hasAlpha) {
+    useFlate = true;
+  }
+  const image = createImageDict(xref, width, height, "DeviceRGB");
+  let imageStreamPromise;
+  let imageRenderStream = null;
+  if (useFlate) {
+    const rgbBuffer = new Uint8Array(width * height * 3);
+    for (let i = 0, j = 0, ii = data.length; i < ii; i += 4, j += 3) {
+      rgbBuffer[j] = data[i];
+      rgbBuffer[j + 1] = data[i + 1];
+      rgbBuffer[j + 2] = data[i + 2];
+    }
+    imageStreamPromise = createPNGLikeImage(rgbBuffer, width, height, image);
+    imageRenderStream = createRawImage(rgbBuffer, createImageDict(xref, width, height, "DeviceRGB"));
+  } else {
+    image.setIfName("Filter", "DCTDecode");
+    imageStreamPromise = canvas.convertToBlob({
+      type: "image/jpeg",
+      quality: 1
+    }).then(blob => blob.bytes()).then(bytes => createRawImage(bytes, image));
+  }
+  let smaskStreamPromise = Promise.resolve(null);
+  let smaskRenderStream = null;
+  if (hasAlpha) {
+    const alphaBuffer = new Uint8Array(buf32.length);
+    if (isLE) {
+      for (let i = 0, ii = buf32.length; i < ii; i++) {
+        alphaBuffer[i] = buf32[i] >>> 24;
+      }
+    } else {
+      for (let i = 0, ii = buf32.length; i < ii; i++) {
+        alphaBuffer[i] = buf32[i] & 0xff;
+      }
+    }
+    const smask = createImageDict(xref, width, height, "DeviceGray");
+    const smaskRenderDict = createImageDict(xref, width, height, "DeviceGray");
+    smaskStreamPromise = createPNGLikeImage(alphaBuffer, width, height, smask);
+    smaskRenderStream = createRawImage(alphaBuffer, smaskRenderDict);
+  }
+  const [imageStream, smaskStream] = await Promise.all([imageStreamPromise, smaskStreamPromise]);
+  return {
+    imageStream,
+    imageRenderStream,
+    smaskStream,
+    smaskRenderStream,
+    width,
+    height
+  };
+}
+
 ;// ./src/core/object_loader.js
 
 
@@ -41541,7 +42278,7 @@ class FontFinder {
     if (font) {
       return font;
     }
-    const pattern = /,|-|_| |bolditalic|bold|italic|regular|it/gi;
+    const pattern = /[,\-_ ]|bolditalic|bold|italic|regular|it/gi;
     let name = fontName.replaceAll(pattern, "");
     font = this.fonts.get(name);
     if (font) {
@@ -49721,7 +50458,7 @@ class Rename extends ContentObject {
   }
   [$finalize]() {
     this[$content] = this[$content].trim();
-    if (this[$content].toLowerCase().startsWith("xml") || new RegExp("[\\p{L}_][\\p{L}\\d._\\p{M}-]*", "u").test(this[$content])) {
+    if (this[$content].toLowerCase().startsWith("xml") || /[\p{L}_][\p{L}\d._\p{M}-]*/u.test(this[$content])) {
       warn("XFA - Rename: invalid XFA name");
     }
   }
@@ -50951,7 +51688,7 @@ function mapStyle(styleStr, node, richText) {
     if (key.endsWith("scale")) {
       style.transform = style.transform ? `${style[key]} ${newValue}` : newValue;
     } else {
-      style[key.replaceAll(/-([a-zA-Z])/g, (_, x) => x.toUpperCase())] = newValue;
+      style[key.replaceAll(/-([a-z])/gi, (_, x) => x.toUpperCase())] = newValue;
     }
   }
   if (style.fontFamily) {
@@ -51798,6 +52535,8 @@ class XFAFactory {
 
 
 
+
+
 class AnnotationFactory {
   static createGlobals(pdfManager) {
     return Promise.all([pdfManager.ensureCatalog("acroForm"), pdfManager.ensureDoc("xfaDatasets"), pdfManager.ensureCatalog("structTreeRoot"), pdfManager.ensureCatalog("baseUrl"), pdfManager.ensureCatalog("attachments"), pdfManager.ensureCatalog("globalColorSpaceCache")]).then(([acroForm, xfaDatasets, structTreeRoot, baseUrl, attachments, globalColorSpaceCache]) => ({
@@ -51957,7 +52696,7 @@ class AnnotationFactory {
         continue;
       }
       imagePromises ||= new Map();
-      imagePromises.set(bitmapId, StampAnnotation.createImage(bitmap, xref));
+      imagePromises.set(bitmapId, createImage(bitmap, xref));
     }
     return imagePromises;
   }
@@ -52018,7 +52757,10 @@ class AnnotationFactory {
             changes.put(imageRef, {
               data: imageStream
             });
-            image.imageStream = image.smaskStream = null;
+            image.imageStream = null;
+            image.imageRenderStream = null;
+            image.smaskStream = null;
+            image.smaskRenderStream = null;
           }
           promises.push(StampAnnotation.createNewAnnotation(xref, annotation, changes, {
             image
@@ -52075,13 +52817,19 @@ class AnnotationFactory {
           if (image?.imageStream) {
             const {
               imageStream,
-              smaskStream
+              imageRenderStream,
+              smaskStream,
+              smaskRenderStream
             } = image;
-            if (smaskStream) {
-              imageStream.dict.set("SMask", smaskStream);
+            const imageRef = imageRenderStream || new JpegStream(imageStream, imageStream.length);
+            if (smaskStream || smaskRenderStream) {
+              imageRef.dict.set("SMask", smaskRenderStream || smaskStream);
             }
-            image.imageRef = new JpegStream(imageStream, imageStream.length);
-            image.imageStream = image.smaskStream = null;
+            image.imageRef = imageRef;
+            image.imageStream = null;
+            image.imageRenderStream = null;
+            image.smaskStream = null;
+            image.smaskRenderStream = null;
           }
           promises.push(StampAnnotation.createNewPrintAnnotation(annotationGlobals, xref, annotation, {
             image,
@@ -52153,6 +52901,7 @@ function getTransformMatrix(rect, bbox, matrix) {
   return [xRatio, 0, 0, yRatio, rect[0] - minX * xRatio, rect[1] - minY * yRatio];
 }
 class Annotation {
+  _oc = undefined;
   constructor(params) {
     const {
       annotationGlobals,
@@ -52174,7 +52923,7 @@ class Annotation {
     this.setColor(dict.getArray("C"));
     this.setBorderStyle(dict);
     this.setAppearance(dict);
-    this.setOptionalContent(dict);
+    this.#setOptionalContent(xref, dict);
     const MK = dict.get("MK");
     this.setBorderAndBackgroundColors(MK);
     this.setRotation(MK, dict);
@@ -52197,6 +52946,7 @@ class Annotation {
       hasAppearance: !!this.appearance,
       id: params.id,
       modificationDate: this.modificationDate,
+      oc: this._oc,
       rect: this.rectangle,
       subtype,
       hasOwnCanvas: false,
@@ -52429,13 +53179,13 @@ class Annotation {
       this.appearance = appearance;
     }
   }
-  setOptionalContent(dict) {
-    this.oc = null;
-    const oc = dict.get("OC");
-    if (oc instanceof Name) {
-      warn("setOptionalContent: Support for /Name-entry is not implemented.");
-    } else if (oc instanceof Dict) {
-      this.oc = oc;
+  #setOptionalContent(xref, dict) {
+    if (dict.has("OC")) {
+      try {
+        this._oc = parseMarkedContentProps(xref, dict.get("OC"), null);
+      } catch (ex) {
+        warn(`#setOptionalContent: ${ex}`);
+      }
     }
   }
   async loadResources(keys, appearance) {
@@ -52478,10 +53228,7 @@ class Annotation {
     const matrix = lookupMatrix(appearanceDict.getArray("Matrix"), IDENTITY_MATRIX);
     const transform = getTransformMatrix(rect, bbox, matrix);
     const opList = new OperatorList();
-    let optionalContent;
-    if (this.oc) {
-      optionalContent = await evaluator.parseMarkedContentProps(this.oc, null);
-    }
+    const optionalContent = this._oc;
     if (optionalContent !== undefined) {
       opList.addOp(OPS.beginMarkedContentProps, ["OC", optionalContent]);
     }
@@ -53038,10 +53785,7 @@ class WidgetAnnotation extends Annotation {
     const matrix = [1, 0, 0, 1, 0, 0];
     const bbox = [0, 0, this.width, this.height];
     const transform = getTransformMatrix(this.data.rect, bbox, matrix);
-    let optionalContent;
-    if (this.oc) {
-      optionalContent = await evaluator.parseMarkedContentProps(this.oc, null);
-    }
+    const optionalContent = this._oc;
     if (optionalContent !== undefined) {
       opList.addOp(OPS.beginMarkedContentProps, ["OC", optionalContent]);
     }
@@ -55173,68 +55917,6 @@ class StampAnnotation extends MarkupAnnotation {
     }
     return !modifiedIds?.has(this.data.id);
   }
-  static async createImage(bitmap, xref) {
-    const {
-      width,
-      height
-    } = bitmap;
-    const canvas = new OffscreenCanvas(width, height);
-    const ctx = canvas.getContext("2d", {
-      alpha: true
-    });
-    ctx.drawImage(bitmap, 0, 0);
-    const data = ctx.getImageData(0, 0, width, height).data;
-    const buf32 = new Uint32Array(data.buffer);
-    const hasAlpha = buf32.some(FeatureTest.isLittleEndian ? x => x >>> 24 !== 0xff : x => (x & 0xff) !== 0xff);
-    if (hasAlpha) {
-      ctx.fillStyle = "white";
-      ctx.fillRect(0, 0, width, height);
-      ctx.drawImage(bitmap, 0, 0);
-    }
-    const jpegBytesPromise = canvas.convertToBlob({
-      type: "image/jpeg",
-      quality: 1
-    }).then(blob => blob.bytes());
-    const xobjectName = Name.get("XObject");
-    const imageName = Name.get("Image");
-    const image = new Dict(xref);
-    image.set("Type", xobjectName);
-    image.set("Subtype", imageName);
-    image.set("BitsPerComponent", 8);
-    image.setIfName("ColorSpace", "DeviceRGB");
-    image.setIfName("Filter", "DCTDecode");
-    image.set("BBox", [0, 0, width, height]);
-    image.set("Width", width);
-    image.set("Height", height);
-    let smaskStream = null;
-    if (hasAlpha) {
-      const alphaBuffer = new Uint8Array(buf32.length);
-      if (FeatureTest.isLittleEndian) {
-        for (let i = 0, ii = buf32.length; i < ii; i++) {
-          alphaBuffer[i] = buf32[i] >>> 24;
-        }
-      } else {
-        for (let i = 0, ii = buf32.length; i < ii; i++) {
-          alphaBuffer[i] = buf32[i] & 0xff;
-        }
-      }
-      const smask = new Dict(xref);
-      smask.set("Type", xobjectName);
-      smask.set("Subtype", imageName);
-      smask.set("BitsPerComponent", 8);
-      smask.setIfName("ColorSpace", "DeviceGray");
-      smask.set("Width", width);
-      smask.set("Height", height);
-      smaskStream = new Stream(alphaBuffer, 0, 0, smask);
-    }
-    const imageStream = new Stream(await jpegBytesPromise, 0, 0, image);
-    return {
-      imageStream,
-      smaskStream,
-      width,
-      height
-    };
-  }
   static createNewDict(annotation, xref, {
     apRef,
     ap
@@ -56515,24 +57197,33 @@ class PDF20 extends PDFBase {
   }
 }
 class CipherTransform {
-  constructor(stringCipherConstructor, streamCipherConstructor) {
-    this.StringCipherConstructor = stringCipherConstructor;
-    this.StreamCipherConstructor = streamCipherConstructor;
+  #cipherCache = new Map();
+  constructor(resolveCipher, stringFilterName = null, streamFilterName = null) {
+    this.resolveCipher = resolveCipher;
+    this.streamFilterName = streamFilterName;
+    this.stringFilterName = stringFilterName;
   }
-  createStream(stream, length) {
-    const cipher = new this.StreamCipherConstructor();
+  #getCipher(filterName = null) {
+    const key = filterName instanceof Name ? filterName.name : "__default__";
+    return this.#cipherCache.getOrInsertComputed(key, () => this.resolveCipher(filterName));
+  }
+  createStream(stream, length, cryptFilterName = null) {
+    const Cipher = this.#getCipher(cryptFilterName || this.streamFilterName);
+    const cipher = new Cipher();
     return new DecryptStream(stream, length, function cipherTransformDecryptStream(data, finalize) {
       return cipher.decryptBlock(data, finalize);
     });
   }
   decryptString(s) {
-    const cipher = new this.StringCipherConstructor();
+    const Cipher = this.#getCipher(this.stringFilterName);
+    const cipher = new Cipher();
     let data = stringToBytes(s);
     data = cipher.decryptBlock(data, true);
     return bytesToString(data);
   }
   encryptString(s) {
-    const cipher = new this.StringCipherConstructor();
+    const Cipher = this.#getCipher(this.stringFilterName);
+    const cipher = new Cipher();
     if (cipher instanceof AESBaseCipher) {
       const strLen = s.length;
       const pad = 16 - strLen % 16;
@@ -56684,35 +57375,6 @@ class CipherTransformFactory {
     const hash = calculateMD5(key, 0, i);
     return hash.subarray(0, Math.min(n + 5, 16));
   }
-  #buildCipherConstructor(cf, name, num, gen, key) {
-    if (!(name instanceof Name)) {
-      throw new FormatError("Invalid crypt filter name.");
-    }
-    const self = this;
-    const cryptFilter = cf.get(name.name);
-    const cfm = cryptFilter?.get("CFM");
-    if (!cfm || cfm.name === "None") {
-      return function () {
-        return new NullCipher();
-      };
-    }
-    if (cfm.name === "V2") {
-      return function () {
-        return new ARCFourCipher(self.#buildObjectKey(num, gen, key, false));
-      };
-    }
-    if (cfm.name === "AESV2") {
-      return function () {
-        return new AES128Cipher(self.#buildObjectKey(num, gen, key, true));
-      };
-    }
-    if (cfm.name === "AESV3") {
-      return function () {
-        return new AES256Cipher(key);
-      };
-    }
-    throw new FormatError("Unknown crypto method");
-  }
   constructor(dict, fileId, password) {
     const filter = dict.get("Filter");
     if (!isName(filter, "Standard")) {
@@ -56808,13 +57470,30 @@ class CipherTransformFactory {
   }
   createCipherTransform(num, gen) {
     if (this.algorithm === 4 || this.algorithm === 5) {
-      return new CipherTransform(this.#buildCipherConstructor(this.cf, this.strf, num, gen, this.encryptionKey), this.#buildCipherConstructor(this.cf, this.stmf, num, gen, this.encryptionKey));
+      const resolveCipher = filterName => {
+        if (!(filterName instanceof Name)) {
+          throw new FormatError("Invalid crypt filter name.");
+        }
+        const cryptFilter = this.cf.get(filterName.name);
+        const cfm = cryptFilter?.get("CFM");
+        if (!cfm || cfm.name === "None") {
+          return NullCipher;
+        }
+        if (cfm.name === "V2") {
+          return ARCFourCipher.bind(null, this.#buildObjectKey(num, gen, this.encryptionKey, false));
+        }
+        if (cfm.name === "AESV2") {
+          return AES128Cipher.bind(null, this.#buildObjectKey(num, gen, this.encryptionKey, true));
+        }
+        if (cfm.name === "AESV3") {
+          return AES256Cipher.bind(null, this.encryptionKey);
+        }
+        throw new FormatError("Unknown crypto method");
+      };
+      return new CipherTransform(resolveCipher, this.strf, this.stmf);
     }
-    const key = this.#buildObjectKey(num, gen, this.encryptionKey, false);
-    const cipherConstructor = function () {
-      return new ARCFourCipher(key);
-    };
-    return new CipherTransform(cipherConstructor, cipherConstructor);
+    const resolveCipher = () => ARCFourCipher.bind(null, this.#buildObjectKey(num, gen, this.encryptionKey, false));
+    return new CipherTransform(resolveCipher);
   }
 }
 
@@ -58511,7 +59190,7 @@ class PDFDocument {
         continue;
       }
       let fontFamily = descriptor.get("FontFamily");
-      fontFamily = fontFamily.replaceAll(/[ ]+(\d)/g, "$1");
+      fontFamily = fontFamily.replaceAll(/ +(\d)/g, "$1");
       const fontWeight = descriptor.get("FontWeight");
       const italicAngle = -descriptor.get("ItalicAngle");
       const cssFontInfo = {
@@ -59601,8 +60280,9 @@ async function writeStream(stream, buffer, transform) {
   const [filter, params] = await Promise.all([dict.getAsync("Filter"), dict.getAsync("DecodeParms")]);
   const filterZero = Array.isArray(filter) ? await dict.xref.fetchIfRefAsync(filter[0]) : filter;
   const isFilterZeroFlateDecode = isName(filterZero, "FlateDecode");
+  const isFilterZeroImageDecode = isName(filterZero, "DCTDecode") || isName(filterZero, "JPXDecode") || isName(filterZero, "JBIG2Decode") || isName(filterZero, "CCITTFaxDecode") || isName(filterZero, "LZWDecode");
   const MIN_LENGTH_FOR_COMPRESSING = 256;
-  if (bytes.length >= MIN_LENGTH_FOR_COMPRESSING && !isFilterZeroFlateDecode) {
+  if (!isFilterZeroFlateDecode && !isFilterZeroImageDecode && bytes.length >= MIN_LENGTH_FOR_COMPRESSING) {
     try {
       const cs = new CompressionStream("deflate");
       const writer = cs.writable.getWriter();
@@ -59986,6 +60666,8 @@ async function incrementalUpdate({
 
 
 
+
+
 const MAX_LEAVES_PER_PAGES_NODE = 16;
 const MAX_IN_NAME_TREE_NODE = 64;
 class PageData {
@@ -60032,24 +60714,26 @@ class XRefWrapper {
     this.entries = entries;
     this._getNewRef = getNewRef;
   }
-  fetch(ref) {
-    return ref instanceof Ref ? this.entries[ref.num] : ref;
-  }
-  fetchIfRefAsync(ref) {
-    return Promise.resolve(this.fetch(ref));
-  }
-  fetchIfRef(ref) {
-    return this.fetch(ref);
-  }
-  fetchAsync(ref) {
-    return Promise.resolve(this.fetch(ref));
-  }
   getNewTemporaryRef() {
     return this._getNewRef();
   }
+  fetchIfRef(obj) {
+    return obj instanceof Ref ? this.fetch(obj) : obj;
+  }
+  fetch(ref) {
+    if (!(ref instanceof Ref)) {
+      throw new Error("ref object is not a reference");
+    }
+    return this.entries[ref.num];
+  }
+  async fetchIfRefAsync(obj) {
+    return obj instanceof Ref ? this.fetchAsync(obj) : obj;
+  }
+  async fetchAsync(ref) {
+    return this.fetch(ref);
+  }
 }
 class PDFEditor {
-  hasSingleFile = false;
   isSingleFile = false;
   #newAnnotationsParams = null;
   #primaryDocument = null;
@@ -60094,8 +60778,7 @@ class PDFEditor {
     this.author = author;
   }
   get newRef() {
-    const ref = Ref.get(this.newRefCount++, 0);
-    return ref;
+    return Ref.get(this.newRefCount++, 0);
   }
   get newDict() {
     const ref = this.newRef;
@@ -60336,9 +61019,9 @@ class PDFEditor {
         attributes = [attributes];
       }
       for (let attr of attributes) {
-        attr = this.xrefWrapper.fetch(attr);
+        attr = this.xrefWrapper.fetchIfRef(attr);
         if (isName(attr.get("O"), "Table") && attr.has("Headers")) {
-          const headers = this.xrefWrapper.fetch(attr.getRaw("Headers"));
+          const headers = this.xrefWrapper.fetchIfRef(attr.getRaw("Headers"));
           if (Array.isArray(headers)) {
             for (let i = 0, ii = headers.length; i < ii; i++) {
               const newId = dedupIDs.get(stringToPDFString(headers[i], false));
@@ -60411,11 +61094,15 @@ class PDFEditor {
     const insertAfterList = [];
     for (let i = 0; i < pageInfos.length; i++) {
       const info = pageInfos[i];
-      if (!info.document) {
+      let count;
+      if (info.image) {
+        count = counts[i] = 1;
+      } else if (!info.document) {
         counts[i] = 0;
         continue;
+      } else {
+        count = counts[i] = this.#getFilteredPageIndices(info).length;
       }
-      const count = counts[i] = this.#getFilteredPageIndices(info).length;
       if (info.pageIndices) {
         continue;
       }
@@ -60434,18 +61121,19 @@ class PDFEditor {
     if (insertAfterList.length === 0) {
       return pageInfos;
     }
+    const hasContent = info => !!(info.document || info.image);
     for (let i = 0; i < pageInfos.length; i++) {
       const info = pageInfos[i];
-      if (info.document && info.pageIndices && info.pageIndices.length < counts[i]) {
+      if (hasContent(info) && info.pageIndices && info.pageIndices.length < counts[i]) {
         throw new Error("extractPages: partial pageIndices cannot be combined with insertAfter entries.");
       }
     }
     insertAfterList.sort((a, b) => a.insertAfter - b.insertAfter || a.i - b.i);
-    if (sequence.length === 0 && pageInfos.some(info => info.document && info.pageIndices)) {
+    if (sequence.length === 0 && pageInfos.some(info => hasContent(info) && info.pageIndices)) {
       const updatedPageInfos = pageInfos.slice();
       let maxExistingPos = -1;
       for (const info of pageInfos) {
-        if (!info.document || !info.pageIndices) {
+        if (!hasContent(info) || !info.pageIndices) {
           continue;
         }
         for (const idx of info.pageIndices) {
@@ -60463,7 +61151,7 @@ class PDFEditor {
         const threshold = Math.min(Math.max(insertAfter, -1) + offset, maxExistingPos);
         for (let j = 0; j < updatedPageInfos.length; j++) {
           const existingInfo = updatedPageInfos[j];
-          if (!existingInfo.document || !existingInfo.pageIndices || existingInfo.pageIndices.every(idx => idx <= threshold)) {
+          if (!hasContent(existingInfo) || !existingInfo.pageIndices || existingInfo.pageIndices.every(idx => idx <= threshold)) {
             continue;
           }
           updatedPageInfos[j] = {
@@ -60502,7 +61190,7 @@ class PDFEditor {
       (pageIndicesArr[infoIdx] ||= []).push(pos);
     }
     return pageInfos.map((info, i) => {
-      if (!info.document || info.pageIndices) {
+      if (!hasContent(info) || info.pageIndices) {
         return info;
       }
       const result = {
@@ -60518,8 +61206,17 @@ class PDFEditor {
     pageInfos = this.#resolveInsertAfterIndices(pageInfos);
     const promises = [];
     let newIndex = 0;
-    this.isSingleFile = pageInfos.length === 1 || pageInfos.every(info => info.document === pageInfos[0].document);
-    this.hasSingleFile = pageInfos.length === 1;
+    const reservePageSlot = newPageIndex => {
+      if (!Number.isInteger(newPageIndex) || newPageIndex < 0) {
+        throw new Error("extractPages: invalid page index.");
+      }
+      if (this.oldPages[newPageIndex] !== undefined) {
+        throw new Error("extractPages: overlapping pageIndices.");
+      }
+      this.oldPages[newPageIndex] = null;
+    };
+    const docPageInfos = pageInfos.filter(info => !!info.document);
+    this.isSingleFile = docPageInfos.length === 1 || docPageInfos.length > 0 && docPageInfos.every(info => info.document === docPageInfos[0].document);
     const allDocumentData = [];
     if (annotationStorage) {
       this.#newAnnotationsParams = {
@@ -60529,27 +61226,56 @@ class PDFEditor {
         imagesPromises: AnnotationFactory.generateImages(annotationStorage.values(), this.xrefWrapper, true)
       };
     }
-    for (const {
-      document,
-      includePages,
-      excludePages,
-      pageIndices
-    } of pageInfos) {
+    const imageEntries = [];
+    for (const pageInfo of pageInfos) {
+      const {
+        document,
+        image,
+        includePages,
+        excludePages,
+        pageIndices
+      } = pageInfo;
+      if (image) {
+        if (pageIndices) {
+          newIndex = -1;
+          if (pageIndices.length > 1) {
+            throw new Error("extractPages: too many pageIndices.");
+          }
+        }
+        let newPageIndex;
+        if (pageIndices?.length) {
+          newPageIndex = pageIndices[0];
+        } else if (newIndex !== -1) {
+          newPageIndex = newIndex++;
+        } else {
+          for (newPageIndex = 0; this.oldPages[newPageIndex] !== undefined; newPageIndex++) {}
+        }
+        reservePageSlot(newPageIndex);
+        imageEntries.push({
+          image,
+          slot: newPageIndex
+        });
+        continue;
+      }
       if (!document) {
         continue;
       }
       if (pageIndices) {
         newIndex = -1;
       }
+      const filteredPageIndices = this.#getFilteredPageIndices({
+        document,
+        includePages,
+        excludePages
+      });
+      if (pageIndices && pageIndices.length > filteredPageIndices.length) {
+        throw new Error("extractPages: too many pageIndices.");
+      }
       const documentData = new DocumentData(document);
       allDocumentData.push(documentData);
       promises.push(this.#collectDocumentData(documentData));
       let pageIndex = 0;
-      for (const i of this.#getFilteredPageIndices({
-        document,
-        includePages,
-        excludePages
-      })) {
+      for (const i of filteredPageIndices) {
         let newPageIndex;
         if (pageIndices) {
           newPageIndex = pageIndices[pageIndex++];
@@ -60561,25 +61287,42 @@ class PDFEditor {
             for (newPageIndex = 0; this.oldPages[newPageIndex] !== undefined; newPageIndex++) {}
           }
         }
-        this.oldPages[newPageIndex] = null;
+        reservePageSlot(newPageIndex);
         promises.push(document.getPage(i).then(page => {
           this.oldPages[newPageIndex] = new PageData(page, documentData);
         }));
       }
     }
     await Promise.all(promises);
+    for (let i = 0, ii = this.oldPages.length; i < ii; i++) {
+      if (this.oldPages[i] === undefined) {
+        throw new Error("extractPages: sparse pageIndices.");
+      }
+    }
     promises.length = 0;
     this.#collectValidDestinations(allDocumentData);
     this.#collectOutlineDestinations(allDocumentData);
     this.#collectPageLabels();
     for (const page of this.oldPages) {
-      promises.push(this.#postCollectPageData(page));
+      if (page) {
+        promises.push(this.#postCollectPageData(page));
+      }
     }
     await Promise.all(promises);
     this.#findDuplicateNamedDestinations();
     this.#setPostponedRefCopies(allDocumentData);
+    const imageSlots = new Map();
+    for (const entry of imageEntries) {
+      imageSlots.set(entry.slot, entry);
+    }
+    const modalPageSize = imageSlots.size > 0 ? this.#modalPageSize() : null;
     for (let i = 0, ii = this.oldPages.length; i < ii; i++) {
-      this.newPages[i] = await this.#makePageCopy(i, null);
+      const imageEntry = imageSlots.get(i);
+      if (imageEntry) {
+        this.newPages[i] = await this.#makeImagePage(imageEntry.image, modalPageSize);
+      } else {
+        this.newPages[i] = await this.#makePageCopy(i, null);
+      }
     }
     this.#fixPostponedRefCopies(allDocumentData);
     await this.#mergeStructTrees(allDocumentData);
@@ -60732,6 +61475,9 @@ class PDFEditor {
       parentTree: newParentTree
     } = this;
     for (let i = 0, ii = this.newPages.length; i < ii; i++) {
+      if (!this.oldPages[i]) {
+        continue;
+      }
       const {
         documentData: {
           parentTree,
@@ -60985,6 +61731,9 @@ class PDFEditor {
     };
     for (let i = 0, ii = this.oldPages.length; i < ii; i++) {
       const page = this.oldPages[i];
+      if (!page) {
+        continue;
+      }
       const {
         documentData: {
           destinations,
@@ -61505,7 +62254,11 @@ class PDFEditor {
     }
   }
   async #collectPageLabels() {
-    if (!this.hasSingleFile) {
+    if (!this.isSingleFile) {
+      return;
+    }
+    const firstRealPage = this.oldPages.find(p => !!p);
+    if (!firstRealPage) {
       return;
     }
     const {
@@ -61513,13 +62266,13 @@ class PDFEditor {
         document,
         pageLabels
       }
-    } = this.oldPages[0];
+    } = firstRealPage;
     if (!pageLabels) {
       return;
     }
     const numPages = document.numPages;
-    const oldPageLabels = [];
-    const oldPageIndices = new Set(this.oldPages.map(({
+    const labelsByPageIndex = new Map();
+    const oldPageIndices = new Set(this.oldPages.filter(p => !!p).map(({
       page: {
         pageIndex
       }
@@ -61541,19 +62294,24 @@ class PDFEditor {
         currentLabel.set("St", st + (i - stFirstIndex));
         stFirstIndex = -1;
       }
-      oldPageLabels.push(currentLabel);
+      labelsByPageIndex.set(i, currentLabel);
     }
-    currentLabel = oldPageLabels[0];
-    let currentIndex = 0;
-    const newPageLabels = this.pageLabels = [[0, currentLabel]];
-    for (let i = 0, ii = oldPageLabels.length; i < ii; i++) {
-      const label = oldPageLabels[i];
+    const defaultLabel = index => {
+      const label = new Dict();
+      label.setIfName("S", "D");
+      label.set("St", index + 1);
+      return label;
+    };
+    currentLabel = null;
+    const newPageLabels = this.pageLabels = [];
+    for (let i = 0, ii = this.oldPages.length; i < ii; i++) {
+      const pageData = this.oldPages[i];
+      const label = pageData ? labelsByPageIndex.get(pageData.page.pageIndex) || defaultLabel(i) : defaultLabel(i);
       if (label === currentLabel) {
         continue;
       }
-      currentIndex = i;
       currentLabel = label;
-      newPageLabels.push([currentIndex, currentLabel]);
+      newPageLabels.push([i, currentLabel]);
     }
   }
   async #makePageCopy(pageIndex) {
@@ -61650,6 +62408,118 @@ class PDFEditor {
       }
     }
     this.currentDocument = null;
+    return pageRef;
+  }
+  #modalPageSize() {
+    const counts = new Map();
+    for (const pageData of this.oldPages) {
+      if (!pageData) {
+        continue;
+      }
+      const {
+        page
+      } = pageData;
+      const [x0, y0, x1, y1] = page.view;
+      let width = x1 - x0;
+      let height = y1 - y0;
+      if (width <= 0 || height <= 0) {
+        continue;
+      }
+      if (page.rotate % 180 !== 0) {
+        [width, height] = [height, width];
+      }
+      const key = `${width}x${height}`;
+      const entry = counts.get(key);
+      if (entry) {
+        entry.count++;
+      } else {
+        counts.set(key, {
+          width,
+          height,
+          count: 1
+        });
+      }
+    }
+    if (counts.size === 0) {
+      const [,, width, height] = LETTER_SIZE_MEDIABOX;
+      return {
+        width,
+        height
+      };
+    }
+    let best = null;
+    for (const entry of counts.values()) {
+      if (!best || entry.count > best.count || entry.count === best.count && entry.width * entry.height > best.width * best.height) {
+        best = entry;
+      }
+    }
+    return {
+      width: best.width,
+      height: best.height
+    };
+  }
+  async #makeImagePage(bitmap, pageSize) {
+    const {
+      width: pageW,
+      height: pageH
+    } = pageSize;
+    const DEFAULT_MARGIN_RATIO = 0.1;
+    const margin = pageW * DEFAULT_MARGIN_RATIO;
+    const availW = Math.max(1, pageW - 2 * margin);
+    const availH = Math.max(1, pageH - 2 * margin);
+    const lastRef = this.newRefCount;
+    const {
+      imageStream,
+      smaskStream,
+      width: imgW,
+      height: imgH
+    } = await createImage(bitmap, this.xrefWrapper, {
+      closeBitmap: true
+    });
+    const scale = Math.min(availW / imgW, availH / imgH);
+    const drawW = imgW * scale;
+    const drawH = imgH * scale;
+    const tx = (pageW - drawW) / 2;
+    const ty = (pageH - drawH) / 2;
+    if (smaskStream) {
+      const smaskRef = this.newRef;
+      this.xref[smaskRef.num] = smaskStream;
+      imageStream.dict.set("SMask", smaskRef);
+    }
+    const imageRef = this.newRef;
+    this.xref[imageRef.num] = imageStream;
+    const xobjectDict = new Dict(this.xrefWrapper);
+    xobjectDict.set("Im0", imageRef);
+    const resourcesDict = new Dict(this.xrefWrapper);
+    resourcesDict.set("XObject", xobjectDict);
+    resourcesDict.set("ProcSet", [Name.get("PDF"), Name.get("ImageC")]);
+    const content = `q ${numberToString(drawW)} 0 0 ${numberToString(drawH)} ` + `${numberToString(tx)} ${numberToString(ty)} cm /Im0 Do Q`;
+    const contentsDict = new Dict(this.xrefWrapper);
+    const contentsStream = new Stream(stringToBytes(content), 0, 0, contentsDict);
+    const contentsRef = this.newRef;
+    this.xref[contentsRef.num] = contentsStream;
+    const pageRef = this.newRef;
+    const pageDict = this.xref[pageRef.num] = new Dict(this.xrefWrapper);
+    pageDict.setIfName("Type", "Page");
+    pageDict.set("MediaBox", [0, 0, pageW, pageH]);
+    pageDict.set("Resources", resourcesDict);
+    pageDict.set("Contents", contentsRef);
+    if (this.useObjectStreams) {
+      const newLastRef = this.newRefCount;
+      const pageObjectRefs = [];
+      for (let i = lastRef; i < newLastRef; i++) {
+        const obj = this.xref[i];
+        if (obj instanceof BaseStream) {
+          continue;
+        }
+        pageObjectRefs.push(Ref.get(i, 0));
+      }
+      for (let i = 0; i < pageObjectRefs.length; i += 0xffff) {
+        const objStreamRef = this.newRef;
+        this.objStreamRefs.add(objStreamRef.num);
+        this.xref[objStreamRef.num] = pageObjectRefs.slice(i, i + 0xffff);
+      }
+    }
     return pageRef;
   }
   #makePageTree() {
@@ -61919,11 +62789,12 @@ class PDFEditor {
   #makeInfo() {
     const infoMap = new Map();
     if (this.isSingleFile) {
+      const firstRealPage = this.oldPages.find(p => !!p);
       const {
         xref: {
           trailer
         }
-      } = this.oldPages[0].documentData.document;
+      } = firstRealPage.documentData.document;
       const oldInfoDict = trailer.get("Info");
       for (const [key, value] of oldInfoDict || []) {
         if (typeof value === "string") {
@@ -61950,9 +62821,10 @@ class PDFEditor {
     if (!this.isSingleFile) {
       return [null, null, null];
     }
+    const firstRealPage = this.oldPages.find(p => !!p);
     const {
       documentData
-    } = this.oldPages[0];
+    } = firstRealPage;
     const {
       document: {
         xref: {
@@ -62275,7 +63147,7 @@ class WorkerMessageHandler {
       docId,
       apiVersion
     } = docParams;
-    const workerVersion = "6.0.135";
+    const workerVersion = "6.0.229";
     if (apiVersion !== workerVersion) {
       throw new Error(`The API version "${apiVersion}" does not match ` + `the Worker version "${workerVersion}".`);
     }
@@ -62604,6 +63476,9 @@ class WorkerMessageHandler {
       }
       let newDocumentId = 0;
       for (const pageInfo of pageInfos) {
+        if (pageInfo.image) {
+          continue;
+        }
         if (pageInfo.document === null) {
           pageInfo.document = pdfManager.pdfDocument;
         } else if (ArrayBuffer.isView(pageInfo.document)) {

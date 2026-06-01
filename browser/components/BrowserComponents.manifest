@@ -11,7 +11,7 @@ category app-startup nsBrowserGlue @mozilla.org/browser/browserglue;1 applicatio
 
 category first-startup-new-profile resource:///modules/AboutNewTabResourceMapping.sys.mjs AboutNewTabResourceMapping.firstStartupNewProfile
 #ifdef XP_WIN
-category first-startup-new-profile resource:///modules/DefaultWindowsLaunchOnLogin.sys.mjs DefaultWindowsLaunchOnLogin.firstStartupNewProfile
+category first-startup-new-profile resource:///modules/DefaultWindowsLaunchOnLogin.sys.mjs DefaultWindowsLaunchOnLogin.applyExperimentOverride
 #endif
 
 # Browser global components initializing before UI startup
@@ -67,6 +67,17 @@ category browser-window-delayed-startup moz-src:///browser/components/genai/Link
 category browser-window-delayed-startup moz-src:///browser/components/reportbrokensite/ReportBrokenSite.sys.mjs ReportBrokenSite.init
 category browser-window-delayed-startup moz-src:///browser/components/search/SearchUIUtils.sys.mjs SearchUIUtils.init
 category browser-window-delayed-startup resource:///modules/taskbartabs/TaskbarTabsPageAction.sys.mjs TaskbarTabsPageAction.init
+
+category browser-window-location-change chrome://browser/content/browser-places.js BookmarkingUI.onLocationChange
+category browser-window-location-change chrome://browser/content/browser-sitePermissionPanel.js gPermissionPanel.onLocationChange
+category browser-window-location-change chrome://browser/content/browser-siteProtections.js gProtectionsHandler.onLocationChange
+category browser-window-location-change chrome://browser/content/browser-pageActions.js BrowserPageActions.onLocationChange
+category browser-window-location-change moz-src:///browser/components/urlbar/UrlbarProviderSearchTips.sys.mjs UrlbarProviderSearchTips.onLocationChange
+category browser-window-location-change moz-src:///browser/components/urlbar/ActionsProviderContextualSearch.sys.mjs ActionsProviderContextualSearch.onLocationChange
+category browser-window-location-change resource:///modules/asrouter/CFRPageActions.sys.mjs CFRPageActions.onLocationChange
+category browser-window-location-change resource:///actors/AboutReaderParent.sys.mjs AboutReaderParent.onLocationChange
+category browser-window-location-change resource://gre/actors/TranslationsParent.sys.mjs TranslationsParent.onLocationChange
+category browser-window-location-change resource://gre/modules/PictureInPicture.sys.mjs PictureInPicture.onLocationChange
 
 category browser-window-unload-begin chrome://browser/content/browser-customtitlebar.js CustomTitlebar.uninit
 category browser-window-unload-begin moz-src:///browser/themes/ToolbarIconColor.sys.mjs ToolbarIconColor.uninit

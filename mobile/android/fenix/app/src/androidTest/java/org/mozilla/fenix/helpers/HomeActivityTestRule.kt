@@ -67,9 +67,11 @@ class HomeActivityTestRule(
         isTermsOfServiceAccepted: Boolean = true,
         openLinksInExternalApp: OpenLinksInApp = getOpenLinksInApp(settings),
         hasSeenShakeToSummarizeToolbarCfr: Boolean = true,
+        shakeToSummarizeFeatureFlagEnabled: Boolean = settings.shakeToSummarizeFeatureFlagEnabled,
         isPrivateModeAndStoriesEntryPointEnabled: Boolean = false,
         shouldUseExpandedToolbar: Boolean = false,
         nativeShareSheetEnabled: Boolean = false,
+        showVoiceSearchInDisplayToolbar: Boolean = false,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isPocketEnabled = isPocketEnabled
         this.isRecentTabsFeatureEnabled = isRecentTabsFeatureEnabled
@@ -90,9 +92,11 @@ class HomeActivityTestRule(
         this.isTermsOfServiceAccepted = isTermsOfServiceAccepted
         this.openLinksInExternalApp = openLinksInExternalApp
         this.hasSeenShakeToSummarizeToolbarCfr = hasSeenShakeToSummarizeToolbarCfr
+        this.shakeToSummarizeFeatureFlagEnabled = shakeToSummarizeFeatureFlagEnabled
         this.isPrivateModeAndStoriesEntryPointEnabled = isPrivateModeAndStoriesEntryPointEnabled
         this.shouldUseExpandedToolbar = shouldUseExpandedToolbar
         this.nativeShareSheetEnabled = nativeShareSheetEnabled
+        this.showVoiceSearchInDisplayToolbar = showVoiceSearchInDisplayToolbar
     }
 
     /**
@@ -202,9 +206,11 @@ class HomeActivityIntentTestRule internal constructor(
         openLinksInExternalApp: OpenLinksInApp = getOpenLinksInApp(settings),
         tabManagerOpeningAnimationEnabled: Boolean = false,
         hasSeenShakeToSummarizeToolbarCfr: Boolean = true,
+        shakeToSummarizeFeatureFlagEnabled: Boolean = settings.shakeToSummarizeFeatureFlagEnabled,
         isPrivateModeAndStoriesEntryPointEnabled: Boolean = false,
         shouldUseExpandedToolbar: Boolean = false,
         nativeShareSheetEnabled: Boolean = false,
+        showVoiceSearchInDisplayToolbar: Boolean = false,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isPocketEnabled = isPocketEnabled
         this.isRecentTabsFeatureEnabled = isRecentTabsFeatureEnabled
@@ -226,9 +232,11 @@ class HomeActivityIntentTestRule internal constructor(
         this.openLinksInExternalApp = openLinksInExternalApp
         this.tabManagerOpeningAnimationEnabled = tabManagerOpeningAnimationEnabled
         this.hasSeenShakeToSummarizeToolbarCfr = hasSeenShakeToSummarizeToolbarCfr
+        this.shakeToSummarizeFeatureFlagEnabled = shakeToSummarizeFeatureFlagEnabled
         this.isPrivateModeAndStoriesEntryPointEnabled = isPrivateModeAndStoriesEntryPointEnabled
         this.shouldUseExpandedToolbar = shouldUseExpandedToolbar
         this.nativeShareSheetEnabled = nativeShareSheetEnabled
+        this.showVoiceSearchInDisplayToolbar = showVoiceSearchInDisplayToolbar
     }
 
     private val longTapUserPreference = getLongPressTimeout()

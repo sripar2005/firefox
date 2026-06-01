@@ -21,6 +21,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///toolkit/components/ipprotection/IPPStartupCache.sys.mjs",
 });
 
+const BANDWIDTH_USAGE_ENABLED_PREF = "browser.ipProtection.bandwidth.enabled";
+
 /**
  * Base class for FxA-backed IPPAuthProvider implementations.
  * Provides shared OAuth token retrieval, Guardian proxy methods,
@@ -60,6 +62,10 @@ export class IPPFxaBaseAuthProvider extends IPPAuthProvider {
   _setEntitlement(entitlement) {
     this.#entitlement = entitlement;
     lazy.IPPStartupCache.storeEntitlement(entitlement);
+    Services.prefs.setBoolPref(
+      BANDWIDTH_USAGE_ENABLED_PREF,
+      entitlement?.limitedBandwidth ?? true
+    );
   }
 
   init() {
@@ -91,20 +97,22 @@ export class IPPFxaBaseAuthProvider extends IPPAuthProvider {
       lazy.IPProtectionService.updateState();
       return;
     }
-    this.updateEntitlement();
+    // Force rechecking the entitlement when sign-in state changes.
+    this.updateEntitlement(true);
   }
 
-  updateEntitlement() {}
+  // eslint-disable-next-line no-unused-vars
+  updateEntitlement(forceRefetch = false) {}
 
   async getEntitlement() {
     try {
       using tokenHandle = await this.getToken();
       const { status, entitlement, error } =
         await this.guardian.fetchUserInfo(tokenHandle);
-      if (error || !entitlement || status != 200) {
+      if (error || status != 200) {
         return { error: error || `Status: ${status}` };
       }
-      return { entitlement };
+      return { entitlement: entitlement ?? null };
     } catch (error) {
       return { error: error.message };
     }
@@ -116,6 +124,10 @@ export class IPPFxaBaseAuthProvider extends IPPAuthProvider {
 
   get maxBytes() {
     return this.entitlement?.maxBytes ?? null;
+  }
+
+  get limitedBandwidth() {
+    return this.entitlement?.limitedBandwidth ?? true;
   }
 
   /**

@@ -536,11 +536,6 @@ class Settings(
         default = false,
     )
 
-    val appIconSelection by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_app_icon_selection_enabled),
-        default = { FxNimbus.features.appIconSelection.value().enabled },
-    )
-
     var privateBrowsingLockedFeatureEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_private_browsing_locked_enabled),
         default = { FxNimbus.features.privateBrowsingLock.value().enabled },
@@ -574,11 +569,6 @@ class Settings(
     var installPwaOpened by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_install_pwa_opened),
         default = false,
-    )
-
-    var showCollectionsPlaceholderOnHome by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_show_collections_placeholder_home),
-        default = true,
     )
 
     val isCrashReportingEnabled: Boolean
@@ -1446,72 +1436,25 @@ class Settings(
             /**
              * Converts an integer value into its corresponding [DeleteDownloadBehavior] enum constant.
              *
-             * If the integer does not match any known value, it defaults to [DELETE_FROM_DEVICE].
+             * If the integer does not match any known value, it defaults to [ASK_WHEN_DELETING].
              *
              * @param value The integer to convert.
              * @return The matching [DeleteDownloadBehavior] or the default.
              */
-            fun fromInt(value: Int) = entries.firstOrNull { it.value == value } ?: DELETE_FROM_DEVICE
-        }
-    }
-
-    /**
-     * Migrates legacy download deletion preferences to the new unified [DeleteDownloadBehavior] setting.
-     *
-     * Previously, the user's preference for handling deleted downloads was stored across multiple
-     * separate boolean keys (including a legacy "clean up files automatically" toggle). This
-     * function reads those old boolean values, maps them to the appropriate [DeleteDownloadBehavior]
-     * enum value, saves the new integer preference, and removes the legacy keys from
-     * [SharedPreferences].
-     *
-     * This migration ensures existing users do not lose their settings after updating the app.
-     * It will safely return early if the migration has already been performed.
-     */
-    fun migrateDeleteDownloadBehaviorIfNeeded() {
-        val newKey = appContext.getString(R.string.pref_key_downloads_delete_behavior)
-        if (preferences.contains(newKey)) return
-
-        val legacyCleanupKey = appContext.getString(
-            R.string.pref_key_downloads_clean_up_files_automatically,
-        )
-        val oldDeleteFromDeviceKey = appContext.getString(R.string.pref_key_downloads_delete_from_device)
-        val oldRemoveFromHistoryKey = appContext.getString(
-            R.string.pref_key_downloads_remove_from_downloads_history,
-        )
-        val oldAskWhenDeletingKey = appContext.getString(R.string.pref_key_downloads_ask_when_to_delete_files)
-
-        val migratedBehavior = when {
-            preferences.contains(legacyCleanupKey) -> {
-                if (preferences.getBoolean(legacyCleanupKey, false)) {
-                    DeleteDownloadBehavior.DELETE_FROM_DEVICE
-                } else {
-                    DeleteDownloadBehavior.REMOVE_FROM_HISTORY
-                }
-            }
-            preferences.getBoolean(oldRemoveFromHistoryKey, false) -> DeleteDownloadBehavior.REMOVE_FROM_HISTORY
-            preferences.getBoolean(oldAskWhenDeletingKey, false) -> DeleteDownloadBehavior.ASK_WHEN_DELETING
-            else -> DeleteDownloadBehavior.DELETE_FROM_DEVICE
-        }
-
-        preferences.edit {
-            putInt(newKey, migratedBehavior.value)
-            remove(legacyCleanupKey)
-            remove(oldDeleteFromDeviceKey)
-            remove(oldRemoveFromHistoryKey)
-            remove(oldAskWhenDeletingKey)
+            fun fromInt(value: Int) = entries.firstOrNull { it.value == value } ?: ASK_WHEN_DELETING
         }
     }
 
     var deleteDownloadBehavior: DeleteDownloadBehavior
         get() = DeleteDownloadBehavior.fromInt(
             preferences.getInt(
-                appContext.getString(R.string.pref_key_downloads_delete_behavior),
-                DeleteDownloadBehavior.DELETE_FROM_DEVICE.value,
+                appContext.getString(R.string.pref_key_downloads_delete_behavior_v2),
+                DeleteDownloadBehavior.ASK_WHEN_DELETING.value,
             ),
         )
         set(value) = preferences.edit {
             putInt(
-                appContext.getString(R.string.pref_key_downloads_delete_behavior),
+                appContext.getString(R.string.pref_key_downloads_delete_behavior_v2),
                 value.value,
             )
         }
@@ -2181,16 +2124,6 @@ class Settings(
     )
 
     /**
-     * Stores the user choice from the "Autofill" settings for whether
-     * credit cards should be synced across devices or not, when the user is authenticated.
-     * If set to `true`, then the credit cards will be synced across devices.
-     */
-    var shouldSyncCreditCardsAcrossDevices by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_credit_cards_sync_cards_across_devices),
-        default = false,
-    )
-
-    /**
      * Stores the user choice from the "Autofill Addresses" settings for whether
      * save and autofill addresses should be enabled or not.
      * If set to `true` when the user focuses on address fields in a webpage an Android prompt is shown,
@@ -2199,16 +2132,6 @@ class Settings(
     var shouldAutofillAddressDetails by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_addresses_save_and_autofill_addresses),
         default = true,
-    )
-
-    /**
-     * Stores the user choice from the "Autofill" settings for whether
-     * addresses should be synced across devices or not, when the user is authenticated.
-     * If set to `true`, then the addresses will be synced across devices.
-     */
-    var shouldSyncAddressesAcrossDevices by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_addresses_sync_cards_across_devices),
-        default = false,
     )
 
     /**
@@ -2523,7 +2446,7 @@ class Settings(
      */
     var enableUnifiedTrustPanel by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_unified_trust_panel),
-        default = { FxNimbus.features.unifiedTrustPanel.value().enabled },
+        default = true,
     )
 
     /**
@@ -2541,6 +2464,26 @@ class Settings(
      */
     val forceOneWeekToWorldCup: Boolean
         get() = FxNimbus.features.homepageSportsWidget.value().forceOneWeekToWorldCup
+
+    /**
+     * Debug-only: when true, the Homepage Sports Widget calls the GCP-hosted mock World
+     * Cup server instead of production Merino. Combined with [mockWorldCupServerSession],
+     * the device hits the mock's `<session-id>/api/v1/wcs/...` routes so QA can simulate
+     * any tournament state ahead of kickoff.
+     */
+    var useMockWorldCupServer by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_use_mock_world_cup_server),
+        default = false,
+    )
+
+    /**
+     * Debug-only: session prefix issued by the mock server's UI (e.g. `jolly-narwhal-39`).
+     * Required when [useMockWorldCupServer] is true.
+     */
+    var mockWorldCupServerSession by stringPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_mock_world_cup_server_session),
+        default = "",
+    )
 
     /**
      * Indicates if the Homepage Sports Widget should be visible on the homepage.
@@ -3181,6 +3124,14 @@ class Settings(
     )
 
     /**
+     * Whether onboarding is enabled for the Tab Groups feature.
+     */
+    var tabGroupsOnboardingEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_tab_groups_onboarding),
+        default = { DefaultTabManagementFeatureHelper.tabGroupsOnboardingEnabled },
+    )
+
+    /**
      * Whether the Native Share Sheet feature is enabled.
      */
     var nativeShareSheetEnabled by booleanPreference(
@@ -3201,6 +3152,14 @@ class Settings(
     var googleLensIntegrationUserEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_google_lens_integration_user_enabled),
         default = true,
+    )
+
+    /**
+     * Whether the voice search entry point is shown in the display-mode browser toolbar.
+     */
+    var showVoiceSearchInDisplayToolbar by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_show_voice_search_in_display_toolbar),
+        default = { FxNimbus.features.voiceSearchInDisplayMode.value().enabled },
     )
 
     /**

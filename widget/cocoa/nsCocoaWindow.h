@@ -545,6 +545,11 @@ class nsCocoaWindow final : public nsIWidget {
   void DoResize(double aX, double aY, double aWidth, double aHeight,
                 bool aRepaint, bool aConstrainToCurrentScreen);
 
+  // If the window's NSWindow frame doesn't intersect any currently-attached
+  // NSScreen, relocate the window onto the main screen so the user can reach
+  // it.
+  void EnsureFrameIsOnScreen();
+
   void UpdateFullscreenState(bool aFullScreen, bool aNativeMode);
   nsresult DoMakeFullScreen(bool aFullScreen, bool aUseSystemTransition);
 
@@ -706,6 +711,7 @@ class nsCocoaWindow final : public nsIWidget {
   // This is class state for tracking native pointer lock state.
   static mozilla::Maybe<NativePointerLockMode> sNativePointerLockMode;
   static LayoutDeviceIntPoint sNativeLockedPoint;
+  static nsCocoaWindow* sNativeLockedWindow;
 };
 
 #endif  // nsCocoaWindow_h_

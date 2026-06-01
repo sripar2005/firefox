@@ -149,50 +149,6 @@ void CodeGeneratorRiscv64::emitTableSwitchDispatch(MTableSwitch* mir,
   masm.branchToComputedAddress(pointer);
 }
 
-template <typename T>
-void CodeGeneratorRiscv64::emitWasmLoad(T* ins) {
-  const MWasmLoad* mir = ins->mir();
-  UseScratchRegisterScope temps(&masm);
-  Register scratch2 = temps.Acquire();
-
-  Register memoryBase = ToRegister(ins->memoryBase());
-  Register ptr = ToRegister(ins->ptr());
-  Register ptrScratch = ToTempRegisterOrInvalid(ins->temp0());
-
-  if (mir->base()->type() == MIRType::Int32) {
-    masm.move32To64ZeroExtend(ptr, Register64(scratch2));
-    ptr = scratch2;
-    ptrScratch = ptrScratch != InvalidReg ? scratch2 : InvalidReg;
-  }
-
-  // ptr is a GPR and is either a 32-bit value zero-extended to 64-bit, or a
-  // true 64-bit value.
-  masm.wasmLoad(mir->access(), memoryBase, ptr, ptrScratch,
-                ToAnyRegister(ins->output()));
-}
-
-template <typename T>
-void CodeGeneratorRiscv64::emitWasmStore(T* ins) {
-  const MWasmStore* mir = ins->mir();
-  UseScratchRegisterScope temps(&masm);
-  Register scratch2 = temps.Acquire();
-
-  Register memoryBase = ToRegister(ins->memoryBase());
-  Register ptr = ToRegister(ins->ptr());
-  Register ptrScratch = ToTempRegisterOrInvalid(ins->temp0());
-
-  if (mir->base()->type() == MIRType::Int32) {
-    masm.move32To64ZeroExtend(ptr, Register64(scratch2));
-    ptr = scratch2;
-    ptrScratch = ptrScratch != InvalidReg ? scratch2 : InvalidReg;
-  }
-
-  // ptr is a GPR and is either a 32-bit value zero-extended to 64-bit, or a
-  // true 64-bit value.
-  masm.wasmStore(mir->access(), ToAnyRegister(ins->value()), memoryBase, ptr,
-                 ptrScratch);
-}
-
 void CodeGeneratorRiscv64::generateInvalidateEpilogue() {
   // Ensure that there is enough space in the buffer for the OsiPoint
   // patching to occur. Otherwise, we could overwrite the invalidation
@@ -219,12 +175,14 @@ void CodeGeneratorRiscv64::generateInvalidateEpilogue() {
 void CodeGeneratorRiscv64::visitOutOfLineTableSwitch(
     OutOfLineTableSwitch* ool) {
   MTableSwitch* mir = ool->mir();
+
+  // Prevent nop and pools sequences to appear in the jump table.
+  AutoForbidPoolsAndNops afp(&masm, 2 + mir->numCases() * 2);
   masm.nop();
   masm.haltingAlign(sizeof(void*));
   masm.bind(ool->jumpLabel());
   masm.addCodeLabel(*ool->jumpLabel());
-  BlockTrampolinePoolScope block_trampoline_pool(
-      &masm, mir->numCases() * sizeof(uint64_t));
+
   for (size_t i = 0; i < mir->numCases(); i++) {
     LBlock* caseblock = skipTrivialBlocks(mir->getCase(i))->lir();
     Label* caseheader = caseblock->label();
@@ -465,32 +423,26 @@ void CodeGenerator::visitWasmLoadI64(LWasmLoadI64* ins) {
   const MWasmLoad* mir = ins->mir();
 
   Register memoryBase = ToRegister(ins->memoryBase());
-  Register ptrScratch = ToTempRegisterOrInvalid(ins->temp0());
+  Register ptr = ToRegister(ins->ptr());
 
-  Register ptrReg = ToRegister(ins->ptr());
+  // See comment in visitWasmLoad re the type of 'base'.
   if (mir->base()->type() == MIRType::Int32) {
-    // See comment in visitWasmLoad re the type of 'base'.
-    masm.move32ZeroExtendToPtr(ptrReg, ptrReg);
+    masm.move32ZeroExtendToPtr(ptr, ptr);
   }
-
-  masm.wasmLoadI64(mir->access(), memoryBase, ptrReg, ptrScratch,
-                   ToOutRegister64(ins));
+  masm.wasmLoadI64(mir->access(), memoryBase, ptr, ToOutRegister64(ins));
 }
 
 void CodeGenerator::visitWasmStoreI64(LWasmStoreI64* ins) {
   const MWasmStore* mir = ins->mir();
 
   Register memoryBase = ToRegister(ins->memoryBase());
-  Register ptrScratch = ToTempRegisterOrInvalid(ins->temp0());
+  Register ptr = ToRegister(ins->ptr());
 
-  Register ptrReg = ToRegister(ins->ptr());
+  // See comment in visitWasmLoad re the type of 'base'.
   if (mir->base()->type() == MIRType::Int32) {
-    // See comment in visitWasmLoad re the type of 'base'.
-    masm.move32ZeroExtendToPtr(ptrReg, ptrReg);
+    masm.move32ZeroExtendToPtr(ptr, ptr);
   }
-
-  masm.wasmStoreI64(mir->access(), ToRegister64(ins->value()), memoryBase,
-                    ptrReg, ptrScratch);
+  masm.wasmStoreI64(mir->access(), ToRegister64(ins->value()), memoryBase, ptr);
 }
 
 void CodeGenerator::visitWasmSelectI64(LWasmSelectI64* ins) {
@@ -918,7 +870,7 @@ void CodeGenerator::visitDivI(LDivI* ins) {
       Label notzero;
       masm.ma_b(rhs, rhs, &notzero, Assembler::NonZero, ShortJump);
       masm.move32(Imm32(0), dest);
-      masm.ma_branch(&done, ShortJump);
+      masm.jump(&done);
       masm.bind(&notzero);
     } else {
       MOZ_ASSERT(mir->fallible());
@@ -1045,7 +997,7 @@ void CodeGenerator::visitModI(LModI* ins) {
       Label yNonZero;
       masm.ma_b(rhs, Imm32(0), &yNonZero, Assembler::NotEqual, ShortJump);
       masm.move32(Imm32(0), dest);
-      masm.ma_branch(&done, ShortJump);
+      masm.jump(&done);
       masm.bind(&yNonZero);
     } else {
       // Non-truncated division by zero produces a non-integer.
@@ -1080,7 +1032,7 @@ void CodeGenerator::visitModPowTwoI(LModPowTwoI* ins) {
   masm.ma_b(in, in, &negative, Assembler::Signed, ShortJump);
   {
     masm.ma_and(out, in, Imm32((1 << ins->shift()) - 1));
-    masm.ma_branch(&done, ShortJump);
+    masm.jump(&done);
   }
 
   // Negative numbers need a negate, bitmask, negate
@@ -1370,7 +1322,7 @@ void CodeGenerator::visitPowHalfD(LPowHalfD* ins) {
                      &skip, ShortJump);
   {
     masm.fneg_d(output, fpscratch);
-    masm.ma_branch(&done, ShortJump);
+    masm.jump(&done);
   }
   masm.bind(&skip);
 
@@ -1617,9 +1569,39 @@ void CodeGenerator::visitNotF(LNotF* ins) {
   masm.ma_compareF32(dest, Assembler::DoubleEqualOrUnordered, in, fpscratch);
 }
 
-void CodeGenerator::visitWasmLoad(LWasmLoad* ins) { emitWasmLoad(ins); }
+void CodeGenerator::visitWasmLoad(LWasmLoad* ins) {
+  const MWasmLoad* mir = ins->mir();
+  UseScratchRegisterScope temps(&masm);
+  Register scratch2 = temps.Acquire();
 
-void CodeGenerator::visitWasmStore(LWasmStore* ins) { emitWasmStore(ins); }
+  Register memoryBase = ToRegister(ins->memoryBase());
+  Register ptr = ToRegister(ins->ptr());
+
+  // ptr is a GPR and is either a 32-bit value zero-extended to 64-bit, or a
+  // true 64-bit value.
+  if (mir->base()->type() == MIRType::Int32) {
+    masm.move32ZeroExtendToPtr(ptr, scratch2);
+    ptr = scratch2;
+  }
+  masm.wasmLoad(mir->access(), memoryBase, ptr, ToAnyRegister(ins->output()));
+}
+
+void CodeGenerator::visitWasmStore(LWasmStore* ins) {
+  const MWasmStore* mir = ins->mir();
+  UseScratchRegisterScope temps(&masm);
+  Register scratch2 = temps.Acquire();
+
+  Register memoryBase = ToRegister(ins->memoryBase());
+  Register ptr = ToRegister(ins->ptr());
+
+  // ptr is a GPR and is either a 32-bit value zero-extended to 64-bit, or a
+  // true 64-bit value.
+  if (mir->base()->type() == MIRType::Int32) {
+    masm.move32ZeroExtendToPtr(ptr, scratch2);
+    ptr = scratch2;
+  }
+  masm.wasmStore(mir->access(), ToAnyRegister(ins->value()), memoryBase, ptr);
+}
 
 void CodeGenerator::visitAsmJSLoadHeap(LAsmJSLoadHeap* ins) {
   const MAsmJSLoadHeap* mir = ins->mir();
@@ -1686,7 +1668,7 @@ void CodeGenerator::visitAsmJSLoadHeap(LAsmJSLoadHeap* ins) {
                  static_cast<LoadStoreSize>(size),
                  isSigned ? SignExtend : ZeroExtend);
   }
-  masm.ma_branch(&done, ShortJump);
+  masm.jump(&done);
   masm.bind(&outOfRange);
   // Offset is out of range. Load default values.
   if (isFloat) {
@@ -1892,18 +1874,17 @@ void CodeGenerator::visitWasmSelect(LWasmSelect* ins) {
   MOZ_ASSERT(ToFloatRegister(ins->trueExpr()) == out,
              "true expr input is reused for output");
 
+  Label done;
+  masm.ma_b(cond, cond, &done, Assembler::NonZero, ShortJump);
   if (falseExpr->isFloatReg()) {
     if (mirType == MIRType::Float32) {
-      masm.ma_fmovz(SingleFloat, out, ToFloatRegister(falseExpr), cond);
+      masm.moveFloat32(ToFloatRegister(falseExpr), out);
     } else if (mirType == MIRType::Double) {
-      masm.ma_fmovz(DoubleFloat, out, ToFloatRegister(falseExpr), cond);
+      masm.moveDouble(ToFloatRegister(falseExpr), out);
     } else {
       MOZ_CRASH("unhandled type in visitWasmSelect!");
     }
   } else {
-    Label done;
-    masm.ma_b(cond, cond, &done, Assembler::NonZero, ShortJump);
-
     if (mirType == MIRType::Float32) {
       masm.loadFloat32(ToAddress(falseExpr), out);
     } else if (mirType == MIRType::Double) {
@@ -1911,9 +1892,8 @@ void CodeGenerator::visitWasmSelect(LWasmSelect* ins) {
     } else {
       MOZ_CRASH("unhandled type in visitWasmSelect!");
     }
-
-    masm.bind(&done);
   }
+  masm.bind(&done);
 }
 
 // We expect to handle only the case where compare is {U,}Int32 and select is
@@ -1958,7 +1938,7 @@ void CodeGenerator::visitUDiv(LUDiv* ins) {
       Label nonZero;
       masm.ma_b(rhs, rhs, &nonZero, Assembler::NonZero, ShortJump);
       masm.move32(Imm32(0), output);
-      masm.ma_branch(&done, ShortJump);
+      masm.jump(&done);
       masm.bind(&nonZero);
     } else {
       bailoutCmp32(Assembler::Equal, rhs, Imm32(0), ins->snapshot());
@@ -2008,7 +1988,7 @@ void CodeGenerator::visitUMod(LUMod* ins) {
       Label nonZero;
       masm.ma_b(rhs, rhs, &nonZero, Assembler::NonZero, ShortJump);
       masm.move32(Imm32(0), output);
-      masm.ma_branch(&done, ShortJump);
+      masm.jump(&done);
       masm.bind(&nonZero);
     } else {
       bailoutCmp32(Assembler::Equal, rhs, Imm32(0), ins->snapshot());

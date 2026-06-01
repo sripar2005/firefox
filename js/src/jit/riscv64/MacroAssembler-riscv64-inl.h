@@ -61,10 +61,13 @@ inline void MacroAssembler::cmp32Set(Assembler::Condition cond, Address lhs,
 
 //{{{ check_macroassembler_style
 CodeOffset MacroAssembler::sub32FromStackPtrWithPatch(Register dest) {
-  CodeOffset offset = CodeOffset(currentOffset());
-  MacroAssemblerRiscv64::ma_liPatchable(dest, Imm32(0));
+  // 2 instruction to materialize the constant.
+  // + 1 instruction for sub.
+  AutoForbidPoolsAndNops afp(this, 3);
+
+  BufferOffset offset = MacroAssemblerRiscv64::ma_liPatchable(dest, Imm32(0));
   sub(dest, StackPointer, dest);
-  return offset;
+  return CodeOffset(offset.getOffset());
 }
 
 void MacroAssembler::branchTest32(Condition cond, Register lhs, Imm32 rhs,
@@ -1356,7 +1359,7 @@ void MacroAssembler::clampIntToUint8(Register reg) {
 
   // If reg is >= 255, then we want to clamp to 255.
   Label skip;
-  ma_branch(&skip, LessThanOrEqual, reg, Operand(255));
+  ma_b(reg, Imm32(255), &skip, LessThanOrEqual, ShortJump);
   {
     ma_li(reg, Imm32(255));
   }
@@ -2099,21 +2102,22 @@ FaultingCodeOffset MacroAssembler::storeFloat16(FloatRegister src,
 
 FaultingCodeOffset MacroAssembler::storeFloat32(FloatRegister src,
                                                 const Address& addr) {
-  return ma_fst_s(src, addr);
+  return ma_storeFloat(src, addr);
 }
 FaultingCodeOffset MacroAssembler::storeFloat32(FloatRegister src,
                                                 const BaseIndex& addr) {
-  return ma_fst_s(src, addr);
+  return ma_storeFloat(src, addr);
 }
 
 FaultingCodeOffset MacroAssembler::storeDouble(FloatRegister src,
                                                const Address& addr) {
-  return ma_fst_d(src, addr);
+  return ma_storeDouble(src, addr);
 }
 FaultingCodeOffset MacroAssembler::storeDouble(FloatRegister src,
                                                const BaseIndex& addr) {
-  return ma_fst_d(src, addr);
+  return ma_storeDouble(src, addr);
 }
+
 void MacroAssembler::sub32(Register src, Register dest) {
   subw(dest, dest, src);
 }

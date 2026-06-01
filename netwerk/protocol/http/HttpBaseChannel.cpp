@@ -48,8 +48,7 @@
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/net/OpaqueResponseUtils.h"
-#include "mozilla/net/UrlClassifierCommon.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/StaticPrefs_javascript.h"
 #include "nsBufferedStreams.h"
 #include "nsCOMPtr.h"
@@ -1417,7 +1416,8 @@ class InterceptFailedOnStop : public nsIThreadRetargetableStreamListener {
   NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
 
   NS_IMETHOD OnStartRequest(nsIRequest* aRequest) override {
-    return mNext->OnStartRequest(aRequest);
+    nsCOMPtr<nsIStreamListener> next = mNext;
+    return next->OnStartRequest(aRequest);
   }
 
   NS_IMETHOD OnStopRequest(nsIRequest* aRequest,
@@ -1427,12 +1427,14 @@ class InterceptFailedOnStop : public nsIThreadRetargetableStreamListener {
            mChannel, static_cast<uint32_t>(aStatusCode)));
       mChannel->mStatus = aStatusCode;
     }
-    return mNext->OnStopRequest(aRequest, aStatusCode);
+    nsCOMPtr<nsIStreamListener> next = mNext;
+    return next->OnStopRequest(aRequest, aStatusCode);
   }
 
   NS_IMETHOD OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInputStream,
                              uint64_t aOffset, uint32_t aCount) override {
-    return mNext->OnDataAvailable(aRequest, aInputStream, aOffset, aCount);
+    nsCOMPtr<nsIStreamListener> next = mNext;
+    return next->OnDataAvailable(aRequest, aInputStream, aOffset, aCount);
   }
 };
 
@@ -1843,7 +1845,7 @@ NS_IMETHODIMP
 HttpBaseChannel::IsThirdPartyTrackingResource(bool* aIsTrackingResource) {
   MOZ_ASSERT(
       !(mFirstPartyClassificationFlags && mThirdPartyClassificationFlags));
-  *aIsTrackingResource = UrlClassifierCommon::IsTrackingClassificationFlag(
+  *aIsTrackingResource = ChannelClassifierUtils::IsTrackingClassificationFlag(
       mThirdPartyClassificationFlags,
       mLoadInfo->GetOriginAttributes().IsPrivateBrowsing());
   return NS_OK;
@@ -1855,7 +1857,7 @@ HttpBaseChannel::IsThirdPartySocialTrackingResource(
   MOZ_ASSERT(!mFirstPartyClassificationFlags ||
              !mThirdPartyClassificationFlags);
   *aIsThirdPartySocialTrackingResource =
-      UrlClassifierCommon::IsSocialTrackingClassificationFlag(
+      ChannelClassifierUtils::IsSocialTrackingClassificationFlag(
           mThirdPartyClassificationFlags);
   return NS_OK;
 }
@@ -3710,7 +3712,8 @@ OpaqueResponse HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff(
 }
 
 bool HttpBaseChannel::NeedOpaqueResponseAllowedCheckAfterSniff() const {
-  return mORB ? mORB->IsSniffing() : false;
+  RefPtr<OpaqueResponseBlocker> orb(mORB);
+  return orb ? orb->IsSniffing() : false;
 }
 
 void HttpBaseChannel::BlockOpaqueResponseAfterSniff(
@@ -3718,12 +3721,14 @@ void HttpBaseChannel::BlockOpaqueResponseAfterSniff(
     const OpaqueResponseBlockedTelemetryReason aTelemetryReason) {
   MOZ_DIAGNOSTIC_ASSERT(mORB);
   LogORBError(aReason, aTelemetryReason);
-  mORB->BlockResponse(this, NS_BINDING_ABORTED);
+  RefPtr<OpaqueResponseBlocker> orb(mORB);
+  orb->BlockResponse(this, NS_BINDING_ABORTED);
 }
 
 void HttpBaseChannel::AllowOpaqueResponseAfterSniff() {
   MOZ_DIAGNOSTIC_ASSERT(mORB);
-  mORB->AllowResponse();
+  RefPtr<OpaqueResponseBlocker> orb(mORB);
+  orb->AllowResponse();
 }
 
 void HttpBaseChannel::SetChannelBlockedByOpaqueResponse() {
@@ -6469,8 +6474,7 @@ HttpBaseChannel::GetNativeServerTiming(
 
 NS_IMETHODIMP
 HttpBaseChannel::CancelByURLClassifier(nsresult aErrorCode) {
-  MOZ_ASSERT(
-      UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(aErrorCode));
+  MOZ_ASSERT(ChannelClassifierUtils::IsClassifierBlockingErrorCode(aErrorCode));
   return Cancel(aErrorCode);
 }
 

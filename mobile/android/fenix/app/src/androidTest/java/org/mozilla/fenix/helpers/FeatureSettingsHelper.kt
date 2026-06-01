@@ -125,6 +125,11 @@ interface FeatureSettingsHelper {
     var hasSeenShakeToSummarizeToolbarCfr: Boolean
 
     /**
+     * Enable or disable the shake to summarize feature flag.
+     */
+    var shakeToSummarizeFeatureFlagEnabled: Boolean
+
+    /**
      * Enable or disable expanded toolbar layout.
      */
     var shouldUseExpandedToolbar: Boolean
@@ -133,6 +138,11 @@ interface FeatureSettingsHelper {
      * Whether the Native Share Sheet feature is enabled.
      */
     var nativeShareSheetEnabled: Boolean
+
+    /**
+     * Whether the voice search entry point is shown in the display-mode browser toolbar.
+     */
+    var showVoiceSearchInDisplayToolbar: Boolean
 
     /**
      * Enable or disable the translations prompt after a page that can be translated is loaded.

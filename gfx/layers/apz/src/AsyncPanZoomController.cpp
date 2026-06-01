@@ -576,8 +576,8 @@ UniquePtr<VelocityTracker> PlatformSpecificStateBase::CreateVelocityTracker(
 // parameter). This is necessary because otherwise, the class could record
 // a change to the scroll offset or zoom made by another thread in between
 // construction and destruction, for which the source would be incorrect.
-class MOZ_STACK_CLASS AsyncPanZoomController::AutoRecordCompositorScrollUpdate
-    final {
+class MOZ_STACK_CLASS
+AsyncPanZoomController::AutoRecordCompositorScrollUpdate final {
  public:
   AutoRecordCompositorScrollUpdate(
       AsyncPanZoomController* aApzc, CompositorScrollUpdate::Source aSource,
@@ -1386,6 +1386,7 @@ void AsyncPanZoomController::StartAutoscroll(const ScreenPoint& aPoint) {
 
   SetState(AUTOSCROLL);
   StartAnimation(do_AddRef(new AutoscrollAnimation(*this, aPoint)));
+  mAutoscrollStartTime = GetFrameTime().Time();
 }
 
 void AsyncPanZoomController::StopAutoscroll() {
@@ -2599,6 +2600,18 @@ static void AdjustDeltaForAllowedScrollDirections(
 
 nsEventStatus AsyncPanZoomController::OnScrollWheel(
     const ScrollWheelInput& aEvent) {
+  // Check that scrolling has not occurred too soon after an autoscroll
+  // started. To avoid accidental cancelling after activating it.
+
+  if (GetState() == AUTOSCROLL) {
+    const auto scrollCooldown = TimeDuration::FromMilliseconds(
+        StaticPrefs::apz_autoscroll_scroll_wheel_cooldown());
+    const auto timeElapsed = GetFrameTime().Time() - mAutoscrollStartTime;
+    if (timeElapsed < scrollCooldown) {
+      return nsEventStatus_eConsumeNoDefault;
+    }
+  }
+
   // Get the scroll wheel's delta values in parent-layer pixels. But before
   // getting the values, we need to check if it is an auto-dir scroll and if it
   // should be adjusted, if both answers are yes, let's adjust X and Y values
@@ -5986,6 +5999,7 @@ void AsyncPanZoomController::NotifyMainThreadTransaction(
       relativeDelta = Some(Metrics().ApplyRelativeScrollUpdateFrom(
           scrollUpdate, FrameMetrics::IsDefaultApzc{isDefault}));
       Metrics().RecalculateLayoutViewportOffset();
+      needToReclampScroll = true;
     } else if (scrollUpdate.GetType() == ScrollUpdateType::PureRelative) {
       APZC_LOG("%p pure-relative updating scroll offset from %s by %s\n", this,
                ToString(Metrics().GetVisualScrollOffset()).c_str(),

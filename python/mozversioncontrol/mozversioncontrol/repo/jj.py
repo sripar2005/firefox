@@ -142,9 +142,17 @@ class JujutsuRepository(Repository):
 
     @property
     def branch(self):
-        # jj does not have an "active branch" concept. The lone caller will fall
-        # back to self.head_ref.
-        return None
+        output = self._run_read_only(
+            "log",
+            "--no-graph",
+            "-n1",
+            "-r",
+            self.HEAD_REVSET,
+            "-T",
+            'local_bookmarks.join("\n")',
+        )
+        bookmark = output.split("\n")[0].strip()
+        return bookmark or None
 
     @property
     def has_git_cinnabar(self):
@@ -365,14 +373,28 @@ class JujutsuRepository(Repository):
         if dest_branch and not ref:
             raise ValueError("Cannot specify dest_branch without specifying ref")
 
+        if ref and dest_branch:
+            ref = self._resolve_to_commit(ref)
         self._git.push(remote, ref=ref, dest_branch=dest_branch, force=force)
 
-    def push_to_try(
-        self,
-        message: str,
-        changed_files: dict[str, str] = {},
-        allow_log_capture: bool = False,
-    ):
+    def _resolve_try_branch(self):
+        dest_branch = self.branch
+        if not dest_branch:
+            # Replicate `jj git push -c` and create a new bookmark
+            template = (
+                self._run_read_only(
+                    "config", "get", "templates.git_push_bookmark", return_codes=[0, 1]
+                ).strip()
+                or '"push-" ++ change_id.short()'
+            )
+            dest_branch = self._run_read_only(
+                "log", "--no-graph", "-n1", "-r", self.HEAD_REVSET, "-T", template
+            ).strip()
+            self._run("bookmark", "create", dest_branch, "-r", self.HEAD_REVSET)
+
+        return dest_branch
+
+    def _push_to_hg_try(self, message, changed_files, allow_log_capture):
         if not self.has_git_cinnabar:
             raise MissingVCSExtension("cinnabar")
 
@@ -508,7 +530,7 @@ class JujutsuRepository(Repository):
                 "log",
                 "--no-graph",
                 "-r",
-                "trunk()..@ ~ description(exact:'')",
+                "heads(trunk() | (remote_bookmarks() & ancestors(@)))..@ ~ description(exact:'')",
                 "-T",
                 "'  ' ++ description.first_line() ++ '\n'",
             ),

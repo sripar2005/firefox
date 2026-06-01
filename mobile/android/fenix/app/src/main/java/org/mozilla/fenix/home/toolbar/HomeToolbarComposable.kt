@@ -28,7 +28,6 @@ import kotlinx.coroutines.launch
 import mozilla.components.browser.state.action.AwesomeBarAction
 import mozilla.components.browser.state.ext.getUrl
 import mozilla.components.browser.state.selector.findTab
-import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.compose.base.utils.BackInvokedHandler
 import mozilla.components.compose.browser.toolbar.BrowserToolbar
@@ -48,7 +47,6 @@ import org.mozilla.fenix.components.appstate.AppAction.SearchAction.SearchEnded
 import org.mozilla.fenix.components.appstate.AppAction.SearchAction.SearchStarted
 import org.mozilla.fenix.components.appstate.VoiceSearchAction.VoiceInputRequested
 import org.mozilla.fenix.components.metrics.MetricsUtils
-import org.mozilla.fenix.components.toolbar.ToolbarPosition.BOTTOM
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.wallpapers.Wallpaper
@@ -73,7 +71,6 @@ internal const val EDIT_TOOLBAR_DELAY_AFTER_VOICE_REQUEST = 1_000L
  * @param tabStripContent [Composable] as the tab strip content to be displayed together with this toolbar.
  * @param searchSuggestionsContent [Composable] as the search suggestions content to be displayed
  * together with this toolbar.
- * @param navigationBarContent Composable content for the navigation bar.
  */
 @Suppress("LongParameterList")
 internal class HomeToolbarComposable(
@@ -88,7 +85,6 @@ internal class HomeToolbarComposable(
     private val coroutineScope: CoroutineScope,
     private val tabStripContent: @Composable () -> Unit,
     private val searchSuggestionsContent: @Composable (Modifier) -> Unit,
-    private val navigationBarContent: (@Composable () -> Unit)?,
 ) : FenixHomeToolbar {
     private val addressBarVisibility = mutableStateOf(true)
 
@@ -174,10 +170,6 @@ internal class HomeToolbarComposable(
                 }
             }
 
-            if (settings.toolbarPosition == BOTTOM) {
-                navigationBarContent?.invoke()
-            }
-
             if (!settings.shouldUseBottomToolbar) {
                 searchSuggestionsContent(Modifier.weight(1f))
             }
@@ -193,31 +185,9 @@ internal class HomeToolbarComposable(
         translationZ = context.resources.getDimension(R.dimen.browser_fragment_above_toolbar_panels_elevation)
     }
 
-    /**
-     * Returns a [Composable] function that renders the default home toolbar content.
-     */
-    override fun asComposable(): @Composable () -> Unit = {
-        DefaultToolbar()
-    }
-
-    override fun build(browserState: BrowserState, middleSearchEnabled: Boolean) {
+    override fun build(middleSearchEnabled: Boolean) {
         configureStartingInSearchMode()
         updateAddressBarVisibility(!middleSearchEnabled)
-    }
-
-    override fun updateDividerVisibility(isVisible: Boolean) {
-        // no-op
-        // For the toolbar redesign we will always show the toolbar divider
-    }
-
-    override fun updateButtonVisibility(
-        browserState: BrowserState,
-    ) {
-        // To be added later
-    }
-
-    override fun updateTabCounter(browserState: BrowserState) {
-        // To be added later
     }
 
     override fun updateAddressBarVisibility(isVisible: Boolean) {

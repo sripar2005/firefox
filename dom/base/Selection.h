@@ -339,6 +339,12 @@ class Selection final : public nsSupportsWeakReference,
   // anchor and which end is focus.
   const nsRange* GetAnchorFocusRange() const { return mAnchorFocusRange; }
 
+  /**
+   * Set mAnchorFocusRange to mStyledRanges.mRanges[aIndex] if aIndex is a
+   * valid index.
+   */
+  void SetAnchorFocusRange(size_t aIndex);
+
   void GetDirection(nsAString& aDirection) const;
 
   nsDirection GetDirection() const { return mDirection; }
@@ -949,11 +955,6 @@ class Selection final : public nsSupportsWeakReference,
     ScrollFlags mFlags;
   };
 
-  /**
-   * Set mAnchorFocusRange to mStyledRanges.mRanges[aIndex] if aIndex is a valid
-   * index.
-   */
-  void SetAnchorFocusRange(size_t aIndex);
   void RemoveAnchorFocusRange() { mAnchorFocusRange = nullptr; }
   void SelectFramesOf(nsIContent* aContent, bool aSelected) const;
 
@@ -1315,6 +1316,26 @@ inline std::ostream& operator<<(
       return aStream << "<Illegal value>";
   }
 }
+
+/**
+ * Use this to detect unexpected selection changes. This is almost the same as
+ * nsMutationGuard. So, when you fix some bugs of this, you should change
+ * nsMutationGuard too.
+ */
+class SelectionChangeGuard {
+ public:
+  SelectionChangeGuard() : mStartingGeneration(sGeneration) {}
+
+  [[nodiscard]] bool Changed(uint32_t aIgnoreCount) const {
+    return (sGeneration - mStartingGeneration) > aIgnoreCount;
+  }
+
+  static void DidChange() { sGeneration++; }
+
+ private:
+  uint64_t mStartingGeneration;
+  static uint64_t sGeneration;
+};
 
 }  // namespace mozilla
 

@@ -14,9 +14,12 @@ import { Weather as WeatherWidget } from "./Weather/Weather";
 import { MessageWrapper } from "content-src/components/MessageWrapper/MessageWrapper";
 import { WidgetsFeatureHighlight } from "../DiscoveryStreamComponents/FeatureHighlight/WidgetsFeatureHighlight";
 import { WidgetsRowFeatureHighlight } from "../DiscoveryStreamComponents/FeatureHighlight/WidgetsRowFeatureHighlight";
+import { OMCHighlightSlot } from "../DiscoveryStreamComponents/FeatureHighlight/OMCHighlightSlot";
+import { SLOTS } from "../DiscoveryStreamComponents/FeatureHighlight/OMCHighlightSlots.mjs";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import {
   WIDGET_REGISTRY,
+  isWidgetAddable,
   isWidgetEnabled,
   resolveWidgetSize,
   resolveWidgetOrder,
@@ -25,10 +28,12 @@ import {
 } from "common/WidgetsRegistry.mjs";
 import { WIDGET_ROW_COMPONENTS } from "./WidgetsComponentRegistry.jsx";
 import { WidgetWrapper } from "./WidgetWrapper";
+import { useWidgetDnD } from "./useWidgetDnD.jsx";
 
 const CONTAINER_ACTION_TYPES = {
   HIDE_ALL: "hide_all",
   CHANGE_SIZE_ALL: "change_size_all",
+  CHANGE_ROW_VISIBILITY: "change_row_visibility",
   FEEDBACK: "feedback",
 };
 
@@ -38,6 +43,7 @@ const PREF_WIDGETS_SYSTEM_WEATHER_FORECAST_ENABLED =
   "widgets.system.weatherForecast.enabled";
 const PREF_WIDGETS_MAXIMIZED = "widgets.maximized";
 const PREF_WIDGETS_SYSTEM_MAXIMIZED = "widgets.system.maximized";
+const PREF_WIDGETS_ROW_EXPANDED = "widgets.row.expanded";
 const PREF_WIDGETS_FEEDBACK_ENABLED = "widgets.feedback.enabled";
 const PREF_WIDGETS_HIDE_ALL_TOAST_ENABLED = "widgets.hideAllToast.enabled";
 const WIDGETS_FEEDBACK_URL =
@@ -120,6 +126,7 @@ function Widgets() {
 
   const novaEnabled = prefs[PREF_NOVA_ENABLED];
   const isMaximized = prefs[PREF_WIDGETS_MAXIMIZED];
+  const rowExpanded = !!prefs[PREF_WIDGETS_ROW_EXPANDED];
   const nimbusMaximizedTrainhopEnabled =
     prefs.trainhopConfig?.widgets?.maximized;
   const feedbackEnabled =
@@ -204,9 +211,35 @@ function Widgets() {
 
   const widgetOrder = resolveWidgetOrder(prefs);
 
+  const {
+    effectiveOrder,
+    draggedId,
+    previewOrderMap,
+    handleDragStart,
+    handleDragOver,
+    handleDrop,
+    handleDragEnd,
+    handleMouseDown,
+  } = useWidgetDnD({
+    widgetOrder,
+    prefs,
+    dispatch,
+  });
+
   const anyWidgetInRow =
     WIDGET_REGISTRY.some(w => widgetEnabledMap[w.id]) ||
     (!novaEnabled && weatherForecastEnabled);
+
+  const allWidgetsAdded = WIDGET_REGISTRY.filter(w =>
+    isWidgetAddable(w, prefs)
+  ).every(w => prefs[w.enabledPref]);
+
+  const renderedWidgetSizes = WIDGET_REGISTRY.filter(
+    w => widgetEnabledMap[w.id]
+  ).map(w => resolveWidgetSize(w, prefs));
+  const addButtonSize = renderedWidgetSizes.includes("large")
+    ? "large"
+    : "medium";
 
   // Widget size is "small" only when maximize feature is enabled and widgets
   // are currently minimized. Otherwise defaults to "medium".
@@ -351,6 +384,28 @@ function Widgets() {
     dispatch(ac.UserEvent({ event: "SHOW_PERSONALIZE" }));
   }
 
+  function toggleRowExpanded() {
+    const next = !rowExpanded;
+    batch(() => {
+      dispatch(ac.SetPref(PREF_WIDGETS_ROW_EXPANDED, next));
+      dispatch(
+        ac.OnlyToMain({
+          type: at.WIDGETS_CONTAINER_ACTION,
+          data: {
+            action_type: CONTAINER_ACTION_TYPES.CHANGE_ROW_VISIBILITY,
+            action_value: next ? "expand_row" : "collapse_row",
+            widget_size: widgetSize,
+          },
+        })
+      );
+    });
+  }
+
+  function handleToggleRowExpandedClick(e) {
+    e.preventDefault();
+    toggleRowExpanded();
+  }
+
   function handleFeedbackClick(e) {
     e.preventDefault();
     batch(() => {
@@ -474,9 +529,87 @@ function Widgets() {
     return null;
   }
 
+  // CSS container queries on the widgets section decide whether the toggle
+  // button is shown — see _Widgets.scss. JS builds the ordered list of
+  // enabled widget sizes and, for each possible card-column count
+  // (1–4), checks whether the layout overflows: any large past the
+  // first N positions can't fit, and any medium past N needs a medium
+  // in the first N to pair with. The matching `data-overflow-N`
+  // attribute is read by the @container rules in CSS.
+  const sizes = [];
+  const enabledWidgetIds = [];
+  // Use effectiveOrder (matches the render loop) so optimistic reorders aren't briefly mis-hidden.
+  for (const id of effectiveOrder) {
+    if (!WIDGET_ROW_COMPONENTS[id] || !widgetEnabledMap[id]) {
+      continue;
+    }
+    const entry = WIDGET_REGISTRY.find(w => w.id === id);
+    let size = entry ? resolveWidgetSize(entry, prefs) : null;
+    // Mirrors the size override applied in the render loop below — when
+    // the sports follow-teams panel is active it always renders large.
+    if (id === "sportsWidget" && sportsWidgetState === "sports-follow-state") {
+      size = "large";
+    }
+    sizes.push(size);
+    enabledWidgetIds.push(id);
+  }
+  const overflowsAt = cols => {
+    if (sizes.length <= cols) {
+      return false;
+    }
+    const rest = sizes.slice(cols);
+    if (rest.some(s => s === "large")) {
+      return true;
+    }
+    const partnersAvailable = sizes
+      .slice(0, cols)
+      .filter(s => s !== "large").length;
+    return rest.length > partnersAvailable;
+  };
+  // For each viewport (cols 1–4), returns the set of widget render indices
+  // that would be clipped when the row is collapsed: any large past the
+  // first `cols` positions, plus mediums past `cols` whose pair-partner
+  // in the first `cols` is already taken. CSS keys off the matching
+  // `data-hidden-N` to make them tab-out and a11y-hide via
+  // `visibility: hidden` at that viewport.
+  const hiddenIndicesAt = cols => {
+    const set = new Set();
+    if (sizes.length <= cols) {
+      return set;
+    }
+    const partnersCount = sizes
+      .slice(0, cols)
+      .filter(s => s !== "large").length;
+    let mediumOverflowSeen = 0;
+    for (let i = cols; i < sizes.length; i++) {
+      if (sizes[i] === "large") {
+        set.add(i);
+      } else {
+        if (mediumOverflowSeen >= partnersCount) {
+          set.add(i);
+        }
+        mediumOverflowSeen++;
+      }
+    }
+    return set;
+  };
+  const hiddenAtCols = {
+    1: hiddenIndicesAt(1),
+    2: hiddenIndicesAt(2),
+    3: hiddenIndicesAt(3),
+    4: hiddenIndicesAt(4),
+  };
+  const overflowAttrs = {
+    "data-overflow-1": overflowsAt(1) ? "" : undefined,
+    "data-overflow-2": overflowsAt(2) ? "" : undefined,
+    "data-overflow-3": overflowsAt(3) ? "" : undefined,
+    "data-overflow-4": overflowsAt(4) ? "" : undefined,
+  };
+  const isCollapsed = novaEnabled && !rowExpanded;
+
   return (
     <div className="widgets-wrapper">
-      <div className="widgets-section-container">
+      <div className="widgets-section-container" {...overflowAttrs}>
         <div className="widgets-title-container">
           <div className="widgets-title-container-text">
             {renderWidgetsTitle()}
@@ -489,10 +622,15 @@ function Widgets() {
 
           <div className="widgets-title-actions">{renderWidgetsActions()}</div>
         </div>
+        {novaEnabled && (
+          <OMCHighlightSlot slot={SLOTS.WIDGETS_ROW} dispatch={dispatch} />
+        )}
         <div
+          id="widgets-container"
           className={`widgets-container${isMaximized ? " is-maximized" : ""}`}
+          data-row-collapsed={isCollapsed ? "" : undefined}
         >
-          {widgetOrder.map(id => {
+          {effectiveOrder.map(id => {
             if (novaEnabled) {
               const Component = WIDGET_ROW_COMPONENTS[id];
               if (!Component || !widgetEnabledMap[id]) {
@@ -508,10 +646,46 @@ function Widgets() {
               ) {
                 size = "large";
               }
+              const renderIdx = enabledWidgetIds.indexOf(id);
+              const hiddenAttrs = {
+                "data-hidden-1": hiddenAtCols[1].has(renderIdx)
+                  ? ""
+                  : undefined,
+                "data-hidden-2": hiddenAtCols[2].has(renderIdx)
+                  ? ""
+                  : undefined,
+                "data-hidden-3": hiddenAtCols[3].has(renderIdx)
+                  ? ""
+                  : undefined,
+                "data-hidden-4": hiddenAtCols[4].has(renderIdx)
+                  ? ""
+                  : undefined,
+              };
+              const wrapperClassName = [
+                size && `${size}-widget`,
+                "widget-draggable",
+                draggedId === id && "is-dragging",
+              ]
+                .filter(Boolean)
+                .join(" ");
+              const dragProps = {
+                style: previewOrderMap
+                  ? { order: previewOrderMap[id] }
+                  : undefined,
+                draggable: true,
+                onDragStart: e => handleDragStart(e, id),
+                onDragOverCapture: handleDragOver,
+                onDrop: handleDrop,
+                onDragEnd: handleDragEnd,
+                onMouseDown: handleMouseDown,
+              };
               return (
                 <WidgetWrapper
                   key={id}
-                  className={size ? `${size}-widget` : ""}
+                  className={wrapperClassName}
+                  data-widget-id={id}
+                  {...hiddenAttrs}
+                  {...dragProps}
                 >
                   <Component
                     dispatch={dispatch}
@@ -556,7 +730,33 @@ function Widgets() {
               </React.Fragment>
             );
           })}
+          {novaEnabled && !allWidgetsAdded && (
+            <button
+              type="button"
+              className={`widgets-add-button col-4 ${addButtonSize}-widget`}
+              style={{ order: WIDGET_REGISTRY.length + 1 }}
+              data-l10n-id="newtab-widget-add-widgets-button"
+              onClick={handleManageWidgetsClick}
+              tabIndex={-1}
+            >
+              <span className="widgets-add-button-icon" />
+            </button>
+          )}
         </div>
+        {novaEnabled && (
+          <moz-button
+            className="widgets-row-toggle"
+            type="default"
+            aria-expanded={rowExpanded}
+            aria-controls="widgets-container"
+            onClick={handleToggleRowExpandedClick}
+            data-l10n-id={
+              rowExpanded
+                ? "newtab-widget-section-show-less"
+                : "newtab-widget-section-show-more"
+            }
+          />
+        )}
         {messageData?.content?.messageType === "NovaWidgetMessage" && (
           <div className="widgets-row-highlight-anchor">
             <MessageWrapper dispatch={dispatch}>

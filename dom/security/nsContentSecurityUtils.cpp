@@ -767,20 +767,20 @@ void nsContentSecurityUtils::NotifyEvalUsage(bool aIsSystemPrincipal,
                                              uint32_t aColumnNumber) {
   FilenameTypeAndDetails fileNameTypeAndDetails =
       FilenameToFilenameType(aFileName, false);
-  auto fileinfo = fileNameTypeAndDetails.second;
-  auto value = Some(fileNameTypeAndDetails.first);
+  auto fileinfo = std::move(fileNameTypeAndDetails.second);
+  auto value = Some(std::move(fileNameTypeAndDetails.first));
   if (aIsSystemPrincipal) {
     glean::security::EvalUsageSystemContextExtra extra = {
-        .fileinfo = fileinfo,
-        .value = value,
+        .fileinfo = std::move(fileinfo),
+        .value = std::move(value),
     };
-    glean::security::eval_usage_system_context.Record(Some(extra));
+    glean::security::eval_usage_system_context.Record(Some(std::move(extra)));
   } else {
     glean::security::EvalUsageParentProcessExtra extra = {
-        .fileinfo = fileinfo,
-        .value = value,
+        .fileinfo = std::move(fileinfo),
+        .value = std::move(value),
     };
-    glean::security::eval_usage_parent_process.Record(Some(extra));
+    glean::security::eval_usage_parent_process.Record(Some(std::move(extra)));
   }
 
   // Report an error to console
@@ -807,7 +807,7 @@ void nsContentSecurityUtils::NotifyEvalUsage(bool aIsSystemPrincipal,
   }
   nsAutoString message;
   NS_ConvertUTF8toUTF16 fileNameA(aFileName);
-  AutoTArray<nsString, 1> formatStrings = {fileNameA};
+  AutoTArray<nsString, 1> formatStrings = {std::move(fileNameA)};
   nsresult rv = bundle->FormatStringFromName("RestrictBrowserEvalUsage",
                                              formatStrings, message);
   if (NS_FAILED(rv)) {
@@ -1291,7 +1291,7 @@ static nsLiteralCString sStyleSrcUnsafeInlineAllowList[] = {
     "chrome://devtools/content/framework/toolbox-options.html"_ns,
     "chrome://devtools/content/framework/toolbox-window.xhtml"_ns,
     "chrome://devtools/content/inspector/index.xhtml"_ns,
-    "chrome://devtools/content/inspector/markup/markup.xhtml"_ns,
+    "chrome://devtools/content/inspector/markup/markup.html"_ns,
     "chrome://devtools/content/netmonitor/index.html"_ns,
     "chrome://devtools/content/memory/index.xhtml"_ns,
     "chrome://devtools/content/shared/sourceeditor/codemirror/cmiframe.html"_ns,
@@ -1371,6 +1371,7 @@ static nsLiteralCString sImgSrcDataBlobAllowList[] = {
     "chrome://browser/content/sidebar/sidebar-bookmarks.html"_ns,
     "chrome://browser/content/sidebar/sidebar-customize.html"_ns,
     "chrome://browser/content/sidebar/sidebar-history.html"_ns,
+    "chrome://browser/content/sidebar/sidebar-opentabs.html"_ns,
     "chrome://browser/content/sidebar/sidebar-syncedtabs.html"_ns,
     "chrome://browser/content/spotlight.html"_ns,
     "chrome://browser/content/syncedtabs/sidebar.xhtml"_ns,
@@ -1379,7 +1380,7 @@ static nsLiteralCString sImgSrcDataBlobAllowList[] = {
     "chrome://devtools/content/framework/browser-toolbox/window.html"_ns,
     "chrome://devtools/content/framework/toolbox-window.xhtml"_ns,
     "chrome://devtools/content/inspector/index.xhtml"_ns,
-    "chrome://devtools/content/inspector/markup/markup.xhtml"_ns,
+    "chrome://devtools/content/inspector/markup/markup.html"_ns,
     "chrome://devtools/content/netmonitor/index.html"_ns,
     "chrome://devtools/content/responsive/toolbar.xhtml"_ns,
     "chrome://devtools/content/shared/sourceeditor/codemirror/cmiframe.html"_ns,
@@ -1935,15 +1936,20 @@ void nsContentSecurityUtils::AssertChromePageHasCSP(Document* aDocument) {
     static_cast<nsCSPContext*>(csp.get())->GetPolicyCount(&count);
   }
 
+  bool hasBaselineCSP = StaticPrefs::security_chrome_baseline_csp_enabled();
+
   // All chrome: pages should have exactly two CSPs (baseline + custom)
-  if (count != 2) {
+  if (count != (hasBaselineCSP ? 2 : 1)) {
     MOZ_CRASH_UNSAFE_PRINTF("Document (%s) does not have a custom CSP!",
                             spec.get());
   }
 
-  nsAutoString baselinePolicy;
-  static_cast<nsCSPContext*>(csp.get())->GetPolicy(0)->toString(baselinePolicy);
-  MOZ_ASSERT(baselinePolicy == kBaselineChromeCSP);
+  if (hasBaselineCSP) {
+    nsAutoString baselinePolicy;
+    static_cast<nsCSPContext*>(csp.get())->GetPolicy(0)->toString(
+        baselinePolicy);
+    MOZ_ASSERT(baselinePolicy == kBaselineChromeCSP);
+  }
 
   // Both of these have a known weaker policy that differs
   // from all other chrome: pages.
@@ -1954,7 +1960,7 @@ void nsContentSecurityUtils::AssertChromePageHasCSP(Document* aDocument) {
   }
 
   const nsCSPPolicy* policy =
-      static_cast<nsCSPContext*>(csp.get())->GetPolicy(1);
+      static_cast<nsCSPContext*>(csp.get())->GetPolicy(hasBaselineCSP ? 1 : 0);
   {
     AllowBuiltinSrcVisitor visitor(CSPDirective::DEFAULT_SRC_DIRECTIVE, spec);
     if (!visitor.visit(policy)) {

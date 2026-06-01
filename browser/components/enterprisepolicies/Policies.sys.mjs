@@ -841,7 +841,8 @@ export var Policies = {
           "limit-foreign": Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN,
           "reject-tracker": Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
           "reject-tracker-and-partition-foreign":
-            Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+            Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
+          "partition-foreign": Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
         };
         if ("Behavior" in param) {
           newCookieBehavior = behaviors[param.Behavior];
@@ -1155,6 +1156,14 @@ export var Policies = {
     onBeforeAddons(manager, param) {
       if (param) {
         manager.disallowFeature("NimbusRollouts");
+      }
+    },
+  },
+
+  DisableRemoteSettingsAndAcceptSecurityConsequences: {
+    onBeforeUIStartup(manager, param) {
+      if (param) {
+        manager.disallowFeature("remoteSettings");
       }
     },
   },
@@ -1616,7 +1625,8 @@ export var Policies = {
           }
         }
       }
-      if (blockAllExtensions) {
+      let allowedTypes = extensionSettings["*"]?.allowed_types;
+      if (blockAllExtensions || allowedTypes) {
         for (let addon of addons) {
           if (
             addon.isSystem ||
@@ -1625,7 +1635,10 @@ export var Policies = {
           ) {
             continue;
           }
-          if (!allowedExtensions.includes(addon.id)) {
+          if (
+            !allowedExtensions.includes(addon.id) &&
+            (blockAllExtensions || !allowedTypes.includes(addon.type))
+          ) {
             try {
               // Can't use the addon from getActiveAddons since it doesn't have uninstall.
               let addonToUninstall = await lazy.AddonManager.getAddonByID(

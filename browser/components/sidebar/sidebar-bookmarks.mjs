@@ -155,6 +155,7 @@ export class SidebarBookmarks extends SidebarPage {
       this.#onPlacesEvents
     );
     this.addContextMenuListeners();
+    this.addSidebarFocusedListeners();
   }
 
   disconnectedCallback() {
@@ -164,6 +165,7 @@ export class SidebarBookmarks extends SidebarPage {
       this.#onPlacesEvents
     );
     this.removeContextMenuListeners();
+    this.removeSidebarFocusedListeners();
   }
 
   async firstUpdated() {
@@ -172,6 +174,10 @@ export class SidebarBookmarks extends SidebarPage {
     }
     this.bookmarks = await this.getBookmarksList();
     this.requestUpdate();
+  }
+
+  handleSidebarFocusedEvent() {
+    this.searchInput?.focus();
   }
 
   getNodesInOrder() {
@@ -310,6 +316,8 @@ export class SidebarBookmarks extends SidebarPage {
             isEmpty,
             isRootFolder: lazy.PlacesUtils.isRootItem(folderEl.guid),
           };
+        } else if (this.findTriggerNode(e, "moz-input-search")) {
+          return;
         } else {
           e.preventDefault();
           return;
@@ -1058,6 +1066,7 @@ export class SidebarBookmarks extends SidebarPage {
         .tabItems=${this.searchResults}
         @fxview-tab-list-primary-action=${this.onPrimaryAction}
         @fxview-tab-list-secondary-action=${this.onSecondaryAction}
+        @fxview-tab-list-middleclick-action=${this.onPrimaryAction}
       ></sidebar-bookmark-list>
     `;
   }
@@ -1096,7 +1105,10 @@ export class SidebarBookmarks extends SidebarPage {
                 .expandedFolderGuids=${this.#expandedFolderGuids}
                 @fxview-tab-list-primary-action=${this.onPrimaryAction}
                 @fxview-tab-list-secondary-action=${this.onSecondaryAction}
+                @fxview-tab-list-middleclick-action=${this.onPrimaryAction}
                 @bookmark-folder-toggle=${this.#onFolderToggle}
+                @bookmark-folder-middleclick=${({ detail }) =>
+                  this.#openBookmarks([detail])}
               ></sidebar-bookmark-list>`
           )}
         </div>

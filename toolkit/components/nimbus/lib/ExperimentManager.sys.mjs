@@ -65,9 +65,9 @@ const CannotEnrollFeatureReason = Object.freeze({
 /**
  * @typedef {object} _CannotEnrollResult
  * @property {false} ok Whether or not enrollment is possible.
- * @property {string| undefined} featureId If reason = DOES_NOT_EXIST, the
+ * @property {string|undefined} featureId If reason = DOES_NOT_EXIST, the
  * feature that does not exist.
- * @property {string[]| undefined} conflictingEnrollments
+ * @property {Set<string>|undefined} conflictingEnrollments
  * If reason = ENROLLED_IN_FEATURE, an array of slugs that conflict based on
  * feature ID.
  * @property {CannotEnrollFeatureReason} reason Why enrollment is not possible.
@@ -618,7 +618,7 @@ export class ExperimentManager {
       };
     }
 
-    const conflictingEnrollments = [];
+    const conflictingEnrollments = new Set();
 
     for (const featureId of recipe.featureIds) {
       const feature = lazy.NimbusFeatures[featureId];
@@ -637,11 +637,11 @@ export class ExperimentManager {
 
       const enrollment = storeLookupByFeature(featureId);
       if (enrollment) {
-        conflictingEnrollments.push(enrollment.slug);
+        conflictingEnrollments.add(enrollment.slug);
       }
     }
 
-    if (conflictingEnrollments.length) {
+    if (conflictingEnrollments.size) {
       return {
         ok: false,
         reason: CannotEnrollFeatureReason.ENROLLED_IN_FEATURE,
@@ -756,7 +756,7 @@ export class ExperimentManager {
             status: lazy.NimbusTelemetry.EnrollmentStatus.NOT_ENROLLED,
             reason:
               lazy.NimbusTelemetry.EnrollmentStatusReason.FEATURE_CONFLICT,
-            conflict_slug: result.conflictingEnrollments.join(","),
+            conflict_slug: Array.from(result.conflictingEnrollments).join(","),
           });
           return null;
       }
@@ -765,49 +765,123 @@ export class ExperimentManager {
     return this._enroll(recipe, branch.slug, source);
   }
 
-  async _enroll(recipe, branchSlug, source) {
-    const {
-      slug,
-      userFacingName,
-      userFacingDescription,
-      featureIds,
-      isRollout,
-      localizations,
-      isFirefoxLabsOptIn,
-      firefoxLabsTitle,
-      firefoxLabsDescription,
-      firefoxLabsDescriptionLinks = null,
-      firefoxLabsGroup,
-      requiresRestart = false,
-    } = recipe;
-
-    const branch = recipe.branches.find(b => b.slug === branchSlug);
-    const { prefs, prefsToSet } = this._getPrefsForBranch(branch, isRollout);
+  /**
+   * Enroll in a specific branch of a recipe.
+   *
+   * @param {object} recipe
+   * The experiment recipe.
+   *
+   * @param {string} branchSlug
+   * The slug of the branch to enroll in. This must exist in the recipe.
+   *
+   * @param {string} source
+   * The source associated with the enrollment.
+   *
+   * @returns {object} The computed enrollment.
+   */
+  _enroll(recipe, branchSlug, source) {
+    const { slug, isRollout } = recipe;
+    const { enrollment, prefsToSet } = this.createEnrollment(
+      recipe,
+      branchSlug,
+      source
+    );
 
     // Unenroll in any conflicting prefFlips enrollments.
     if (prefsToSet.length) {
       this._prefFlips._handleSetPrefConflict(
         slug,
-        prefs.map(p => p.name)
+        enrollment.prefs.map(p => p.name)
       );
+    }
+
+    this.store.addEnrollment(enrollment, recipe);
+
+    this._setEnrollmentPrefs(prefsToSet);
+    this._updatePrefObservers(enrollment);
+
+    lazy.NimbusTelemetry.recordEnrollment(enrollment);
+
+    lazy.log.debug(
+      `New ${isRollout ? "rollout" : "experiment"} started: ${slug}, ${
+        branchSlug
+      }`
+    );
+
+    return enrollment;
+  }
+
+  /**
+   * @typedef {object} CreateEnrollmentResult
+   *
+   * @property {object} enrollment
+   * The created enrollment.
+   *
+   * @property {PrefToSet[] | null} prefsToSet
+   * Prefs that should be set upon enrollment.
+   */
+
+  /**
+   * Create an enrollment
+   *
+   * @param {object} recipe
+   * The experiment recipe.
+   *
+   * @param {string} branchSlug
+   * The slug of the branch to enroll in. This must exist in the recipe.
+   *
+   * @param {string} source
+   * The source associated with the enrollment.
+   *
+   * @param {object} properties
+   * Additional properties to overwrite on the enrollment.
+   *
+   * @param {boolean} options.active
+   * Whether or not the enrollment should be active (enrolled).
+   *
+   * @returns {CreateEnrollmentResult}
+   *
+   * @throws If the branch does not exist.
+   */
+  createEnrollment(
+    recipe,
+    branchSlug,
+    source,
+    { active = true, ...extra } = {}
+  ) {
+    const {
+      slug,
+      userFacingName,
+      userFacingDescription,
+      featureIds,
+      isRollout = false,
+      localizations = null,
+      isFirefoxLabsOptIn,
+      firefoxLabsTitle,
+      firefoxLabsDescription,
+      firefoxLabsDescriptionLinks,
+      firefoxLabsGroup,
+      requiresRestart,
+    } = recipe;
+
+    const branch = recipe.branches.find(b => b.slug === branchSlug);
+    if (typeof branch === "undefined") {
+      throw new Error(`${recipe.slug}: no such branch ${branchSlug}`);
     }
 
     const enrollment = {
       slug,
-      branch,
-      active: true,
       source,
       userFacingName,
       userFacingDescription,
       lastSeen: new Date().toJSON(),
       featureIds,
       isRollout,
-      prefs,
+      prefs: [],
+      active,
+      branch,
+      localizations,
     };
-
-    if (localizations) {
-      enrollment.localizations = localizations;
-    }
 
     if (typeof isFirefoxLabsOptIn !== "undefined") {
       Object.assign(enrollment, {
@@ -820,22 +894,19 @@ export class ExperimentManager {
       });
     }
 
-    await this._prefFlips._annotateEnrollment(enrollment);
+    let prefsToSet = null;
+    if (active) {
+      this._prefFlips._annotateEnrollment(enrollment);
 
-    this.store.addEnrollment(enrollment, recipe);
+      const result = this._getPrefsForBranch(enrollment.branch, isRollout);
 
-    this._setEnrollmentPrefs(prefsToSet);
-    this._updatePrefObservers(enrollment);
+      enrollment.prefs = result.prefs;
+      prefsToSet = result.prefsToSet;
+    }
 
-    lazy.NimbusTelemetry.recordEnrollment(enrollment);
+    Object.assign(enrollment, extra);
 
-    lazy.log.debug(
-      `New ${isRollout ? "rollout" : "experiment"} started: ${slug}, ${
-        branch.slug
-      }`
-    );
-
-    return enrollment;
+    return { enrollment, prefsToSet };
   }
 
   /**
@@ -845,16 +916,26 @@ export class ExperimentManager {
    * distinguish it from regular enrollments in telemetry.
    *
    * @param {object} recipe The recipe to enroll in.
-   * @param {string} branchSlug The slug of the branch to enroll in.
+   * @param {object|string} branchOrBranchSlug Either the slug of the branch to
+   * enroll in or the branch object.
    *
    * @returns {object} The resulting enrollment.
    */
-  async forceEnroll(recipe, branchSlug) {
-    const branch = recipe.branches.find(b => b.slug === branchSlug);
-    if (!branch) {
-      throw new Error(
-        `Could not force enroll into ${recipe.slug}: no such branch ${branchSlug}`
+  forceEnroll(recipe, branchOrBranchSlug) {
+    let branch;
+    if (typeof branchOrBranchSlug === "string") {
+      branch = recipe.branches.find(b => b.slug === branchOrBranchSlug);
+
+      if (!branch) {
+        throw new Error(
+          `Could not force enroll into ${recipe.slug}: no such branch ${branchOrBranchSlug}`
+        );
+      }
+    } else {
+      lazy.log.warn(
+        "forceEnroll with an object branch is deprecated and will be removed in a future version"
       );
+      branch = branchOrBranchSlug;
     }
 
     const result = this.canEnroll(recipe);
@@ -883,6 +964,7 @@ export class ExperimentManager {
               )
             );
           }
+          break;
       }
     }
 
@@ -890,11 +972,40 @@ export class ExperimentManager {
     optInRecipe.userFacingName = `${recipe.userFacingName} - Forced enrollment`;
     optInRecipe.slug = `optin-${recipe.slug}`;
 
-    const enrollment = await this._enroll(
+    // If there is an existing active enrollment with this slug, we must
+    // unenroll from it first, otherwise _enroll() will overwrite it without
+    // going through the appropriate flow (e.g., updating the enrollment store
+    // and triggering update callbacks).
+    const existingEnrollment = this.store.get(optInRecipe.slug);
+    if (existingEnrollment?.active) {
+      // We need only unenroll -- when we call _enroll() below, we will
+      // overwrite the existing enrollment.
+      this.unenroll(
+        optInRecipe.slug,
+        UnenrollmentCause.fromReason(
+          lazy.NimbusTelemetry.UnenrollReason.FORCE_ENROLLMENT
+        )
+      );
+    }
+
+    // If there is an existing Firefox Labs entry for a recipe with this slug,
+    // we must remove it because we are replacing the enrollment.
+    this.unregisterOptIn(optInRecipe.slug);
+
+    const enrollment = this._enroll(
       optInRecipe,
-      branchSlug,
+      branch.slug,
       lazy.NimbusTelemetry.EnrollmentSource.FORCE_ENROLLMENT
     );
+
+    // The entry must be registered *after* enrollment so that the new
+    // enrollment lines up correctly with the recipe.
+    if (optInRecipe.isFirefoxLabsOptIn) {
+      this.registerOptIn(
+        optInRecipe,
+        lazy.NimbusTelemetry.EnrollmentSource.FORCE_ENROLLMENT
+      );
+    }
 
     Services.obs.notifyObservers(
       null,
@@ -1305,23 +1416,65 @@ export class ExperimentManager {
   }
 
   /**
+   * An annotation generated for a setPref variable for an enrollment.
+   *
+   * @typedef {object} SetPrefAnnotation
+   *
+   * @property {string} name
+   * The name of the pref.
+   *
+   * @property {"user"|"default"}
+   * The branch the pref is to be set on.
+   *
+   * @property {string} featureId
+   * The featureId of the variable controlling this pref.
+   *
+   * @property {string} variable
+   * The variable controlling this pref.
+   *
+   * @property {string|number|boolean|null} originalvalue
+   * The original value of the pref.
+   */
+
+  /**
+   * Information about a pref that should be set upon enrollment in a recipe.
+   *
+   * @typedef {object} PrefToSet
+   *
+   * @property {string} name
+   * The name of the pref.
+   *
+   * @property {string|number|boolean} value
+   * The value of the pref.
+   *
+   * @property {"user"|"default"} prefBranch
+   * The branch on which the pref should be set.
+   */
+
+  /**
+   * Information about what prefs should be set as a result of enrollment in a
+   * specific branch.
+   *
+   * @typedef {object} PrefsForBranch
+   *
+   * @property {SetPrefAnnotation[]} prefs
+   * Pref annotations to be added to the enrollment.
+   *
+   * This list will include prefs that will not be set because the enrollment
+   * corresponds to a rollout and there is an active experiment controlling the
+   * same pref.
+   *
+   * @property {PrefToSet[]} prefsToSet
+   * Prefs that should be set upon enrollment.
+   */
+
+  /**
    * Generate the list of prefs a recipe will set.
    *
    * @param {object} branch The recipe branch that will be enrolled.
    * @param {boolean} isRollout Whether or not this recipe is a rollout.
    *
-   * @returns {object} An object with the following keys:
-   *
-   *                   `prefs`:
-   *                        The full list of prefs that this recipe would set,
-   *                        if there are no conflicts. This will include prefs
-   *                        that, for example, will not be set because this
-   *                        enrollment is a rollout and there is an active
-   *                        experiment that set the same pref.
-   *
-   *                   `prefsToSet`:
-   *                        Prefs that should be set once enrollment is
-   *                        complete.
+   * @returns {PrefsForBranch}
    */
   _getPrefsForBranch(branch, isRollout = false) {
     const prefs = [];
@@ -1415,14 +1568,8 @@ export class ExperimentManager {
    * pref so as not to accidentally unenroll an existing rollout that an
    * experiment would override.
    *
-   * @param {object[]} prefsToSet
-   *                   A list of objects containing the prefs to set.
-   *
-   *                   Each object has the following properties:
-   *
-   *                   * `name`: The name of the pref.
-   *                   * `value`: The value of the pref.
-   *                   * `prefBranch`: The branch to set the pref on (either "user" or "default").
+   * @param {PrefToSet[]} prefsToSet
+   * An array of the prefs that should be set.
    */
   _setEnrollmentPrefs(prefsToSet) {
     for (const { name, value, prefBranch } of prefsToSet) {
@@ -1939,17 +2086,20 @@ export class ExperimentManager {
    * @returns {boolean} True if the opt-in was registered or false if there was a conflict.
    */
   registerOptIn(recipe, source) {
+    if (!recipe.isFirefoxLabsOptIn) {
+      return false;
+    }
+
     if (this.optIns.find(entry => entry.recipe.slug === recipe.slug)) {
       return false;
     }
 
+    // Prevent enrollment if there is an existing enrollment that either does
+    // not match the source or is not a Firefox Labs opt-in.
     const enrollment = this.store.get(recipe.slug);
     if (
       enrollment &&
-      (enrollment.source !== source ||
-        !enrollment.isFirefoxLabsOptIn ||
-        (enrollment.active &&
-          source !== lazy.NimbusTelemetry.EnrollmentSource.RS_LOADER))
+      (enrollment.source !== source || !enrollment.isFirefoxLabsOptIn)
     ) {
       return false;
     }
@@ -1961,7 +2111,8 @@ export class ExperimentManager {
   /**
    * Unregister an opt-in recipe from a source.
    *
-   * NB: This is only intended to be used by nimbus-devtools.
+   * NB: This is only intended to be used during force enrollment or by
+   * nimbus-devtools.
    *
    * @param {string} slug The slug of the recipe to remove.
    *

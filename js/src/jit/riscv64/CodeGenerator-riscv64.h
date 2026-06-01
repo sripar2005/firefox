@@ -69,6 +69,8 @@ class CodeGeneratorRiscv64 : public CodeGeneratorShared {
                      Assembler::Condition cond) {
     masm.ma_b(lhs, rhs, skipTrivialBlocks(mir)->lir()->label(), cond);
   }
+
+  enum FloatFormat { SingleFloat, DoubleFloat };
   void branchToBlock(FloatFormat fmt, FloatRegister lhs, FloatRegister rhs,
                      MBasicBlock* mir, Assembler::DoubleCondition cond);
 
@@ -87,11 +89,6 @@ class CodeGeneratorRiscv64 : public CodeGeneratorShared {
 
   void emitTableSwitchDispatch(MTableSwitch* mir, Register index,
                                Register base);
-
-  template <typename T>
-  void emitWasmLoad(T* ins);
-  template <typename T>
-  void emitWasmStore(T* ins);
 
   void generateInvalidateEpilogue();
 

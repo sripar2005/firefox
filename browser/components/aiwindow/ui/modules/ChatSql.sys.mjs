@@ -63,7 +63,8 @@ CREATE TABLE message (
   memories_flag_source INTEGER,
   memories_applied_jsonb BLOB,
   web_search_queries_jsonb BLOB,
-  page_history_deleted BOOLEAN NOT NULL DEFAULT false
+  page_history_deleted BOOLEAN NOT NULL DEFAULT false,
+  tool_ui_data_jsonb BLOB
 ) WITHOUT ROWID;
 `;
 
@@ -111,19 +112,22 @@ INSERT INTO message (
   revision_root_message_id, ordinal, is_active_branch, role,
   model_id, params_jsonb, content_jsonb, usage_jsonb, page_url, turn_index,
   memories_enabled, memories_flag_source, memories_applied_jsonb,
-  web_search_queries_jsonb
+  web_search_queries_jsonb,
+  tool_ui_data_jsonb
 ) VALUES (
   :message_id, :conv_id, :created_date, :parent_message_id,
   :revision_root_message_id, :ordinal, :is_active_branch, :role,
   :model_id, jsonb(:params), jsonb(:content), jsonb(:usage), :page_url, :turn_index,
   :memories_enabled, :memories_flag_source, jsonb(:memories_applied_jsonb),
-  jsonb(:web_search_queries_jsonb)
+  jsonb(:web_search_queries_jsonb),
+  jsonb(:tool_ui_data_jsonb)
 )
 ON CONFLICT(message_id) DO UPDATE SET
   is_active_branch = :is_active_branch,
   memories_applied_jsonb = jsonb(:memories_applied_jsonb),
   content_jsonb = jsonb(:content),
-  web_search_queries_jsonb = jsonb(:web_search_queries_jsonb);
+  web_search_queries_jsonb = jsonb(:web_search_queries_jsonb),
+  tool_ui_data_jsonb = jsonb(:tool_ui_data_jsonb);
 `;
 
 export const CONVERSATIONS_MOST_RECENT = `
@@ -251,7 +255,8 @@ export function getConversationMessagesSql(amount) {
       page_url, turn_index, memories_enabled, memories_flag_source,
       json(memories_applied_jsonb) AS memories_applied,
       json(web_search_queries_jsonb) AS web_search_queries,
-      json(content_jsonb) AS content, page_history_deleted
+      json(content_jsonb) AS content, page_history_deleted,
+      json(tool_ui_data_jsonb) AS tool_ui_data
       FROM message
       WHERE conv_id IN(${new Array(amount).fill("?").join(",")})
       ORDER BY ordinal ASC;
@@ -337,7 +342,8 @@ SELECT
   page_url, turn_index, memories_enabled, memories_flag_source,
   json(memories_applied_jsonb) AS memories_applied,
   json(web_search_queries_jsonb) AS web_search_queries,
-  json(content_jsonb) AS content, page_history_deleted
+  json(content_jsonb) AS content, page_history_deleted,
+  json(tool_ui_data_jsonb) AS tool_ui_data
 FROM message
 WHERE created_date >= :start_date AND created_date <= :end_date
 ORDER BY created_date DESC
@@ -352,7 +358,8 @@ SELECT
   page_url, turn_index, memories_enabled, memories_flag_source,
   json(memories_applied_jsonb) AS memories_applied,
   json(web_search_queries_jsonb) AS web_search_queries,
-  json(content_jsonb) AS content, page_history_deleted
+  json(content_jsonb) AS content, page_history_deleted,
+  json(tool_ui_data_jsonb) AS tool_ui_data
 FROM message
 WHERE role = :role
   AND created_date >= :start_date AND created_date <= :end_date
@@ -394,4 +401,95 @@ WHERE EXISTS (
 )
 ORDER BY c.updated_date {sort}
 LIMIT :limit OFFSET :offset;
+`;
+
+export const LLM_TELEMETRY_TABLE = `
+CREATE TABLE IF NOT EXISTS llm_telemetry (
+  conv_id TEXT PRIMARY KEY,
+  telemetry_prompts BLOB,
+  telemetry_probabilities BLOB,
+  uniform_sampling_probability REAL DEFAULT 0.0,
+  processed_time TIMESTAMP,
+  processed INTEGER DEFAULT 0
+)
+`;
+
+export const GET_LLM_TELEMETRY_DATA_BY_CONV_ID = `
+SELECT
+  telemetry_prompts,
+  telemetry_probabilities
+FROM llm_telemetry
+WHERE conv_id = :conv_id
+`;
+
+export const UPSERT_LLM_TELEMETRY = `
+INSERT INTO llm_telemetry (
+  conv_id,
+  telemetry_prompts,
+  telemetry_probabilities,
+  uniform_sampling_probability,
+  processed_time,
+  processed
+)
+VALUES (
+  :conv_id,
+  :telemetry_prompts,
+  :telemetry_probabilities,
+  :uniform_sampling_probability,
+  :processed_time,
+  :processed
+)
+ON CONFLICT(conv_id) DO UPDATE SET
+  telemetry_prompts = excluded.telemetry_prompts,
+  telemetry_probabilities = excluded.telemetry_probabilities,
+  processed_time = excluded.processed_time,
+  processed = excluded.processed
+`;
+
+export const MARK_LLM_TELEMETRY_UNPROCESSED = `
+  UPDATE llm_telemetry SET processed = 0 WHERE conv_id = :conv_id
+`;
+
+export const MARK_LLM_TELEMETRY_PROCESSED = `
+UPDATE llm_telemetry
+SET
+  processed = 1,
+  processed_time = :processed_time,
+  telemetry_prompts = :telemetry_prompts
+WHERE conv_id = :conv_id
+`;
+
+export const GET_LLM_TELEMETRY_BY_CONV_ID = `
+SELECT
+  conv_id,
+  telemetry_prompts,
+  telemetry_probabilities,
+  uniform_sampling_probability,
+  processed_time,
+  processed
+FROM llm_telemetry
+WHERE conv_id = :conv_id
+`;
+
+export const GET_CONVERSATIONS_FOR_TELEMETRY = `
+SELECT
+  m.conv_id,
+  t.telemetry_prompts AS telemetryJobs,
+  t.telemetry_probabilities AS telemetryProbs,
+  t.uniform_sampling_probability,
+  m.model_id,
+  m.turn_index
+FROM llm_telemetry t
+JOIN (
+  SELECT conv_id, MAX(created_date) AS last_message_time
+  FROM message
+  WHERE role = 1 -- assistant 
+  GROUP BY conv_id
+) lm
+  ON t.conv_id = lm.conv_id
+JOIN message m
+  ON m.conv_id = lm.conv_id
+ AND m.created_date = lm.last_message_time
+WHERE t.processed = 0
+  AND lm.last_message_time < strftime('%s', 'now', '-5 hours') * 1000;
 `;

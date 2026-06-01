@@ -658,7 +658,10 @@ add_task(async function test_unrelatedMessage_ChatConversation_retryMessage() {
 
   await Assert.rejects(
     conversation.retryMessage(unrelatedMessage),
-    /Unrelated message/
+    err =>
+      /Unrelated message/.test(err.message) &&
+      err.clientReason === "retryInvalidMessage",
+    "retryMessage should reject with clientReason retryInvalidMessage"
   );
 });
 
@@ -669,7 +672,10 @@ add_task(async function test_nonUserMessage_ChatConversation_retryMessage() {
 
   await Assert.rejects(
     conversation.retryMessage(conversation.messages[0]),
-    /Not a user message/
+    err =>
+      /Not a user message/.test(err.message) &&
+      err.clientReason === "retryInvalidMessage",
+    "retryMessage should reject with clientReason retryInvalidMessage"
   );
 });
 
@@ -1716,4 +1722,88 @@ add_task(function test_addUIToolToCurrentMessage_emits_events() {
 
   Assert.ok(updateEventFired, "Update event should be emitted");
   Assert.ok(completeEventFired, "Complete event should be re-emitted");
+});
+
+add_task(async function test_addUserMessage_dismisses_prior_undo() {
+  const conversation = new ChatConversation({});
+  conversation.addUserMessage("Close my tabs", "https://example.com/", 0);
+  conversation.addAssistantMessage("text", "Closed");
+
+  const assistant = conversation.messages.at(-1);
+  assistant.toolUIData = {
+    toolCallId: "t1",
+    uiType: "ai-action-result",
+    properties: { confirmedData: { operationId: "op-1" } },
+  };
+
+  // User sends a new message
+  conversation.addUserMessage("show my history", "https://example.com/", 0);
+
+  Assert.equal(
+    assistant.toolUIData.properties.confirmedData.operationId,
+    "op-1",
+    "Dismissal preserves other property keys"
+  );
+  Assert.strictEqual(
+    assistant.toolUIData.properties.undoDismissed,
+    true,
+    "Prior ai-action-result with active operationId gets undoDismissed on follow-up"
+  );
+});
+
+add_task(async function test_dismissPendingUndos_skips_without_operationId() {
+  const conversation = new ChatConversation({});
+  conversation.addUserMessage("Close my tabs", "https://example.com/", 0);
+  conversation.addAssistantMessage("text", "Closed");
+
+  const assistant = conversation.messages.at(-1);
+  assistant.toolUIData = {
+    toolCallId: "t1",
+    uiType: "ai-action-result",
+    properties: { confirmedData: {} },
+  };
+
+  conversation.addUserMessage("show my history", "https://example.com/", 0);
+
+  Assert.ok(
+    !assistant.toolUIData.properties.undoDismissed,
+    "ai-action-result without operationId is not dismissed"
+  );
+});
+
+add_task(async function test_dismissPendingUndos_only_dismisses_most_recent() {
+  const conversation = new ChatConversation({});
+
+  conversation.addUserMessage("Close A", "https://example.com/", 0);
+  conversation.addAssistantMessage("text", "Closed A");
+  const olderAssistant = conversation.messages.at(-1);
+
+  conversation.addAssistantMessage("text", "Closed B");
+  const newerAssistant = conversation.messages.at(-1);
+
+  // Set toolUIData on both before the next user message triggers undoDismissed
+  olderAssistant.toolUIData = {
+    toolCallId: "t1",
+    uiType: "ai-action-result",
+    properties: { confirmedData: { operationId: "op-older" } },
+  };
+  newerAssistant.toolUIData = {
+    toolCallId: "t2",
+    uiType: "ai-action-result",
+    properties: { confirmedData: { operationId: "op-newer" } },
+  };
+
+  conversation.addUserMessage("show my history", "https://example.com/", 0);
+
+  Assert.withSoftAssertions(function (soft) {
+    soft.strictEqual(
+      newerAssistant.toolUIData.properties.undoDismissed,
+      true,
+      "Most recent qualifying card is dismissed"
+    );
+    soft.ok(
+      !olderAssistant.toolUIData.properties.undoDismissed,
+      "Older qualifying card is left untouched"
+    );
+  });
 });

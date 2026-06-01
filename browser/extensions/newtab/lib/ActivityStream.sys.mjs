@@ -335,6 +335,13 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "hideLogo",
+    {
+      title: "Hide the Firefox logo on new tab",
+      value: false,
+    },
+  ],
+  [
     "showSponsored",
     {
       title: "User pref for sponsored Pocket content",
@@ -552,6 +559,52 @@ export const PREFS_CONFIG = new Map([
     {
       title: "The Merino endpoint for fetching World Cup match data",
       value: "https://merino.services.mozilla.com/api/v1/wcs/matches",
+    },
+  ],
+  [
+    "sports.worldCup.liveEndpoint",
+    {
+      title: "The Merino endpoint for fetching live World Cup match data",
+      value: "https://merino.services.mozilla.com/api/v1/wcs/live",
+    },
+  ],
+  [
+    "sports.worldCup.watchLiveEndpoint",
+    {
+      title:
+        "The Merino endpoint for fetching World Cup watch-live broadcaster data",
+      value: "https://merino.services.mozilla.com/api/v1/wcs/watch-links",
+    },
+  ],
+  [
+    "widgets.sportsWidget.pollIdleMs",
+    {
+      title:
+        "Sports widget: poll interval when no games are imminent (milliseconds)",
+      value: 21600000, // 6 hours
+    },
+  ],
+  [
+    "widgets.sportsWidget.pollMatchDayMs",
+    {
+      title:
+        "Sports widget: poll interval on a match day pre-kickoff (milliseconds)",
+      value: 1800000, // 30 minutes
+    },
+  ],
+  [
+    "widgets.sportsWidget.pollLiveMs",
+    {
+      title: "Sports widget: poll interval during live play (milliseconds)",
+      value: 60000, // 1 minute
+    },
+  ],
+  [
+    "widgets.sportsWidget.pollPregameLeadMs",
+    {
+      title:
+        "Sports widget: how early to enter LIVE polling before kickoff (milliseconds)",
+      value: 600000, // 10 minutes
     },
   ],
   [
@@ -1214,6 +1267,14 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "widgets.row.expanded",
+    {
+      title:
+        "Whether the Nova widgets row is expanded beyond its first visual row. Persists the user's Show more / Show less choice across sessions.",
+      value: false,
+    },
+  ],
+  [
     "widgets.focusTimer.enabled",
     {
       title: "Enables the focus timer widget",
@@ -1303,7 +1364,7 @@ export const PREFS_CONFIG = new Map([
     "widgets.defaultSize",
     {
       title: "Default size for widgets (medium or large)",
-      value: "large",
+      value: "medium",
     },
   ],
   [
@@ -1349,6 +1410,14 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "widgets.sports.forceLiveDataTrustable",
+    {
+      title:
+        "Dev/QA only: bypass the pre-kickoff guard and treat /live data as trustable",
+      value: false,
+    },
+  ],
+  [
     "widgets.sportsWidget.interaction",
     {
       title:
@@ -1360,7 +1429,7 @@ export const PREFS_CONFIG = new Map([
     "widgets.clocks.size",
     {
       title: "Size of the clock widget (small, medium, or large)",
-      getValue: getDefaultWidgetSize,
+      value: "",
     },
   ],
   [

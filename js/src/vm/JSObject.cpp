@@ -1789,6 +1789,18 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
       id == NameToId(cx->names().toTemporalInstant)) {
     return true;
   }
+  if (key == JSProto_Locale && !JS::Prefs::experimental_intl_locale_info()) {
+    if (id == NameToId(cx->names().firstDayOfWeek) ||
+        id == NameToId(cx->names().getTextInfo) ||
+        id == NameToId(cx->names().getNumberingSystems) ||
+        id == NameToId(cx->names().getCollations) ||
+        id == NameToId(cx->names().getCalendars) ||
+        id == NameToId(cx->names().getHourCycles) ||
+        id == NameToId(cx->names().getWeekInfo) ||
+        id == NameToId(cx->names().getTimeZones)) {
+      return true;
+    }
+  }
 #endif
 
 #ifdef NIGHTLY_BUILD
@@ -1829,18 +1841,6 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
       return true;
     }
   }
-  if (key == JSProto_Locale && !JS::Prefs::experimental_intl_locale_info()) {
-    if (id == NameToId(cx->names().firstDayOfWeek) ||
-        id == NameToId(cx->names().getTextInfo) ||
-        id == NameToId(cx->names().getNumberingSystems) ||
-        id == NameToId(cx->names().getCollations) ||
-        id == NameToId(cx->names().getCalendars) ||
-        id == NameToId(cx->names().getHourCycles) ||
-        id == NameToId(cx->names().getWeekInfo) ||
-        id == NameToId(cx->names().getTimeZones)) {
-      return true;
-    }
-  }
 #endif
 
   if (key == JSProto_Function &&
@@ -1848,13 +1848,11 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
       id == NameToId(cx->names().captureStackTrace)) {
     return true;
   }
-#ifdef NIGHTLY_BUILD
   if (key == JSProto_Function &&
       !JS::Prefs::experimental_error_stack_trace_limit() &&
       id == NameToId(cx->names().stackTraceLimit)) {
     return true;
   }
-#endif
   if (key == JSProto_Atomics && !JS::Prefs::experimental_atomics_pause() &&
       id == NameToId(cx->names().pause)) {
     return true;
@@ -2921,7 +2919,7 @@ void JSObject::traceChildren(JSTracer* trc) {
     if (nobj->hasDynamicSlots()) {
       ObjectSlots* slots = nobj->getSlotsHeader();
       MOZ_ASSERT(nobj->slots_ == slots->slots());
-      TraceBufferEdge(trc, nobj, &slots, "objectDynamicSlots buffer");
+      TraceBufferEdge(trc, &slots, "objectDynamicSlots buffer");
       if (slots != nobj->getSlotsHeader()) {
         nobj->slots_ = slots->slots();
       }
@@ -2930,7 +2928,7 @@ void JSObject::traceChildren(JSTracer* trc) {
     if (nobj->hasDynamicElements()) {
       void* buffer = nobj->getUnshiftedElementsHeader();
       uint32_t numShifted = nobj->getElementsHeader()->numShiftedElements();
-      TraceBufferEdge(trc, nobj, &buffer, "objectDynamicElements buffer");
+      TraceBufferEdge(trc, &buffer, "objectDynamicElements buffer");
       if (buffer != nobj->getUnshiftedElementsHeader()) {
         nobj->elements_ =
             reinterpret_cast<ObjectElements*>(buffer)->elements() + numShifted;

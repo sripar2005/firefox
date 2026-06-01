@@ -16,6 +16,8 @@
     <string name="content_description_normal_browsing">Normal browsing</string>
     <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
     <string name="search_hint">Search or enter address</string>
+    <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+    <string name="search_hint_short">Search</string>
     <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
     <string name="search_hint_general_engine">Search the web</string>
     <!-- Placeholder text shown in search bar when using history search -->
@@ -1505,6 +1507,8 @@
     <string name="tab_manager_search_bar_placeholder">Search your tabs</string>
     <!-- Text shown in the menu to view recently closed tabs -->
     <string name="tab_tray_menu_recently_closed">Recently closed tabs</string>
+    <!-- Text shown in the menu to select all tabs. -->
+    <string name="tab_tray_menu_select_all_tabs">Select all</string>
     <!-- Text shown in the menu to view account settings -->
     <string name="tab_tray_menu_account_settings">Account settings</string>
     <!-- Text shown in the menu to view tab settings -->
@@ -2171,8 +2175,7 @@
     <string name="collections_header">Collections</string>
     <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
     <string name="collection_menu_button_content_description">Collection menu</string>
-    <!-- Label to describe what collections are to a new user without any collections -->
-    <string name="no_collections_description2">Collect the things that matter to you.\nGroup together similar searches, sites, and tabs for quick access later.</string>
+
     <!-- Title for the "select tabs" step of the collection creator -->
     <string name="create_collection_select_tabs">Select Tabs</string>
     <!-- Title for the "select collection" step of the collection creator -->
@@ -2582,6 +2585,8 @@
     <string name="etp_suspected_fingerprinters_description">Enables fingerprinting protection to stop suspected fingerprinters.</string>
     <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
     <string name="etp_known_fingerprinters_title">Known Fingerprinters</string>
+    <!-- Label for the fingerprinters category shown in the tracking protections dashboard breakdown -->
+    <string name="tracking_dashboard_fingerprinters_category_name">Fingerprinters</string>
     <!-- Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
          as we use it on the UI to indicate which trackers have been partially unblocked.  -->
     <string name="preference_etp_smartblock_description">Some trackers marked below have been partially unblocked on this page because you interacted with them *.</string>
@@ -3297,9 +3302,6 @@
     <string name="default_browser_experiment_card_title">Switch your default browser</string>
     <!-- Default browser card text -->
     <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Set links from websites, emails, and messages to open automatically in Firefox.</string>
-
-    <!-- Content description for close button in collection placeholder. -->
-    <string name="remove_home_collection_placeholder_content_description">Remove</string>
 
     <!-- Content description radio buttons with a link to more information -->
     <string name="radio_preference_info_content_description">Click for more details</string>
@@ -4220,4 +4222,26 @@
     <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">Privacy Notice</string>
     <!-- The second active link used in privacy_notice_updated_homepage_message -->
     <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Learn more</string>
+
+    <!-- Firefox Labs -->
+    <!-- Banner title text on the Firefox Labs screen. -->
+    <string name="firefox_labs_banner_title">Give our experimental features a try!</string>
+    <!-- Banner description text on the Firefox Labs screen. Provides information on what Firefox Labs does. %s is the name of the app (for example "Firefox Nightly").
+    Text will appear under the Firefox Labs banner title. -->
+    <string name="firefox_labs_experimental_description">They’re in development and evolving which could impact how %s works.</string>
+    <!-- Button text on the Firefox Labs screen for restoring all toggles back to the default settings. The button will turn off any experimental features. -->
+    <string name="firefox_labs_restore_default_button_text">Restore defaults</string>
+    <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
+    <string name="firefox_labs_feature_dialog_title">Restart required</string>
+    <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->
+    <string name="firefox_labs_dialog_restart_button">Restart</string>
+    <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->
+    <string name="firefox_labs_dialog_cancel_button">Cancel</string>
+    <!-- The title used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. -->
+    <string name="firefox_labs_restore_defaults_dialog_title">Restart required</string>
+    <!-- The description used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+    <string name="firefox_labs_restore_defaults_dialog_message">To restore defaults, restart %s.</string>
+    <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
+    <string name="firefox_labs_no_labs_available_description">No experimental features to try right now</string>
+
 </resources>

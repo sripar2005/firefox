@@ -61,9 +61,12 @@ support-files = [
 
 ["browser_aiwindow_assistant_message_footer.js"]
 
+["browser_aiwindow_chat_tool_ui.js"]
+
 ["browser_aiwindow_firstrun.js"]
 skip-if = [
   "debug && standalone", # Bug 2025711
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2012723
 ]
 
 ["browser_aiwindow_followup_tokens.js"]
@@ -113,6 +116,8 @@ skip-if = [
   "debug && standalone", # Bug 2025711
 ]
 
+["browser_aiwindow_tab_close_integration.js"]
+
 ["browser_aiwindow_theme.js"]
 
 ["browser_aiwindow_token_parsing.js"]
@@ -129,15 +134,13 @@ skip-if = [
 
 ["browser_aiwindow_website_select.js"]
 
-["browser_aiwindow_chat_tool_ui.js"]
-
-["browser_aiwindow_tab_close_integration.js"]
-
 ["browser_aiwindowui.js"]
 
 ["browser_memories_icon_button.js"]
 
 ["browser_open_aiwindow.js"]
+
+["browser_security_chat.js"]
 
 ["browser_sidebar_aiwindow.js"]
 
@@ -176,6 +179,8 @@ skip-if = [
 
 ["browser_smartwindow_metrics_telemetry.js"]
 
+["browser_smartwindow_nimbus.js"]
+
 ["browser_smartwindow_panel_list.js"]
 
 ["browser_smartwindow_prompts.js"]
@@ -198,6 +203,8 @@ skip-if = [
 ["browser_smartwindow_sidebar.js"]
 
 ["browser_smartwindow_sidebar_auto_open_pref_prompt.js"]
+
+["browser_smartwindow_smartbar_model_select.js"]
 
 ["browser_smartwindow_smartbar_tab_state.js"]
 

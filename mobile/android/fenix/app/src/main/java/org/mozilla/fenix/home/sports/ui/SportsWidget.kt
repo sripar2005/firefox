@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -23,6 +24,8 @@ import org.mozilla.fenix.home.sports.CountrySelectorSource
 import org.mozilla.fenix.home.sports.FollowedTeamOutcome
 import org.mozilla.fenix.home.sports.LiveMatchRefreshSource
 import org.mozilla.fenix.home.sports.SportCardErrorState
+import org.mozilla.fenix.home.sports.SportsCardImpressionSource
+import org.mozilla.fenix.home.sports.SportsCardType
 import org.mozilla.fenix.home.sports.Team
 import org.mozilla.fenix.home.sports.WORLD_CUP_KICKOFF_UTC
 import org.mozilla.fenix.home.sports.regionGrouping
@@ -47,6 +50,8 @@ private val SportsWidgetTopSpacing = 44.dp
  * @param onGetCustomWallpaper Invoked when the user clicks on the "Get custom wallpaper" menu item.
  * @param onRefresh Used to refresh the scores for live matches.
  * @param onMatchClicked Used to handle match click actions.
+ * @param onCardShown Invoked once per widget mount for the first visible card (impression) and on
+ * every subsequent swipe to a different page in the pager (swipe).
  * @param modifier [Modifier] to apply to the composable.
  */
 @Composable
@@ -61,6 +66,7 @@ fun SportsWidget(
     onGetCustomWallpaper: () -> Unit,
     onRefresh: (LiveMatchRefreshSource) -> Unit,
     onMatchClicked: (String?, String?, String?) -> Unit,
+    onCardShown: (SportsCardType, SportsCardImpressionSource) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Spacer(modifier = Modifier.height(SportsWidgetTopSpacing))
@@ -79,64 +85,112 @@ fun SportsWidget(
 
     when {
         sportsWidgetState.isCountdownShown -> {
-            CountdownPromoCard(
-                dateInUtc = WORLD_CUP_KICKOFF_UTC,
-                actionButtonLabelResId = R.string.sports_widget_view_schedule,
-                onClick = onViewSchedule,
-                onDismiss = onCountdownWidgetDismiss,
-                modifier = containerModifier,
-            )
+            // Even pre-tournament, surface the error card when a fetch failure is
+            // active so the user sees the failure instead of the countdown promo.
+            val standaloneCardType = sportsWidgetState.errorState?.let { SportsCardType.fromError(it) }
+                ?: SportsCardType.COUNTDOWN_PROMO
+            LaunchedEffect(standaloneCardType) {
+                onCardShown(standaloneCardType, SportsCardImpressionSource.IMPRESSION)
+            }
+            if (sportsWidgetState.errorState != null) {
+                SportsWidgetErrorCard(
+                    error = sportsWidgetState.errorState,
+                    onRefresh = { onRefresh(LiveMatchRefreshSource.SPORTS_WIDGET_CARD_ERROR_BUTTON) },
+                    modifier = containerModifier,
+                )
+            } else {
+                CountdownPromoCard(
+                    dateInUtc = WORLD_CUP_KICKOFF_UTC,
+                    actionButtonLabelResId = R.string.sports_widget_view_schedule,
+                    onClick = onViewSchedule,
+                    onDismiss = onCountdownWidgetDismiss,
+                    modifier = containerModifier,
+                )
+            }
         }
 
         sportsWidgetState.isOneWeekToWorldCup || sportsWidgetState.hasWorldCupStarted -> {
-            val countriesSelected = sportsWidgetState.countriesSelected
-            val selectedTeam = remember(countriesSelected) {
-                regionGrouping
-                    .asSequence()
-                    .flatMap { it.teams.asSequence() }
-                    .firstOrNull { it.key in countriesSelected }
-            }
-
-            val pagesResult = remember(
-                sportsWidgetState.isOneWeekToWorldCup,
-                sportsWidgetState.isFollowTeamsCardShown,
-                selectedTeam,
-                sportsWidgetState.matchCardStates,
-                sportsWidgetState.errorState,
-                onFollowTeam,
-                onGetCustomWallpaper,
-                onDismiss,
-                onRefresh,
-                onMatchClicked,
-            ) {
-                sportsCardPages(
-                    isOneWeekToWorldCup = sportsWidgetState.isOneWeekToWorldCup,
-                    isFollowTeamsCardShown = sportsWidgetState.isFollowTeamsCardShown,
-                    selectedTeam = selectedTeam,
-                    matchCardStates = sportsWidgetState.matchCardStates,
-                    errorState = sportsWidgetState.errorState,
-                    onFollowTeam = onFollowTeam,
-                    onGetCustomWallpaper = onGetCustomWallpaper,
-                    onRemove = onDismiss,
-                    onRefresh = onRefresh,
-                    onMatchClicked = onMatchClicked,
-                )
-            }
-
-            SportsCardPager(
-                pages = pagesResult.first,
-                onChangeTeam = onFollowTeam,
+            SportsCardPagerSection(
+                sportsWidgetState = sportsWidgetState,
+                onFollowTeam = onFollowTeam,
                 onGetCustomWallpaper = onGetCustomWallpaper,
-                onRemove = onDismiss,
+                onDismiss = onDismiss,
+                onRefresh = onRefresh,
+                onMatchClicked = onMatchClicked,
+                onCardShown = onCardShown,
                 modifier = containerModifier,
-                championsPageIndices = pagesResult.second,
             )
         }
     }
 }
 
+@Composable
 @Suppress("LongParameterList")
-private fun sportsCardPages(
+private fun SportsCardPagerSection(
+    sportsWidgetState: SportsWidgetState,
+    onFollowTeam: (CountrySelectorSource) -> Unit,
+    onGetCustomWallpaper: () -> Unit,
+    onDismiss: () -> Unit,
+    onRefresh: (LiveMatchRefreshSource) -> Unit,
+    onMatchClicked: (String?, String?, String?) -> Unit,
+    onCardShown: (SportsCardType, SportsCardImpressionSource) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val countriesSelected = sportsWidgetState.countriesSelected
+    val selectedTeam = remember(countriesSelected) {
+        regionGrouping
+            .asSequence()
+            .flatMap { it.teams.asSequence() }
+            .firstOrNull { it.key in countriesSelected }
+    }
+
+    val pagesResult = remember(
+        sportsWidgetState.isOneWeekToWorldCup,
+        sportsWidgetState.isFollowTeamsCardShown,
+        selectedTeam,
+        sportsWidgetState.matchCardStates,
+        sportsWidgetState.errorState,
+        onFollowTeam,
+        onGetCustomWallpaper,
+        onDismiss,
+        onRefresh,
+        onMatchClicked,
+    ) {
+        sportsCardPages(
+            isOneWeekToWorldCup = sportsWidgetState.isOneWeekToWorldCup,
+            isFollowTeamsCardShown = sportsWidgetState.isFollowTeamsCardShown,
+            selectedTeam = selectedTeam,
+            matchCardStates = sportsWidgetState.matchCardStates,
+            errorState = sportsWidgetState.errorState,
+            onFollowTeam = onFollowTeam,
+            onGetCustomWallpaper = onGetCustomWallpaper,
+            onRemove = onDismiss,
+            onRefresh = onRefresh,
+            onMatchClicked = onMatchClicked,
+        )
+    }
+
+    SportsCardPager(
+        isTeamSelected = selectedTeam != null,
+        pages = pagesResult.pages,
+        onChangeTeam = onFollowTeam,
+        onGetCustomWallpaper = onGetCustomWallpaper,
+        onRemove = onDismiss,
+        onCardShown = onCardShown,
+        modifier = modifier,
+        championsPageIndices = pagesResult.championsPageIndices,
+        errorPageIndices = pagesResult.errorPageIndices,
+    )
+}
+
+internal data class SportsCardPagesResult(
+    val pages: List<SportsPage>,
+    val championsPageIndices: Set<Int>,
+    val errorPageIndices: Set<Int>,
+)
+
+@Suppress("LongParameterList")
+internal fun sportsCardPages(
     isOneWeekToWorldCup: Boolean,
     isFollowTeamsCardShown: Boolean,
     selectedTeam: Team?,
@@ -147,69 +201,170 @@ private fun sportsCardPages(
     onRemove: () -> Unit,
     onRefresh: (LiveMatchRefreshSource) -> Unit,
     onMatchClicked: (String?, String?, String?) -> Unit,
-): Pair<List<@Composable (pageNumber: Int, pageCount: Int) -> Unit>, Set<Int>> {
+): SportsCardPagesResult {
     val championsPageIndices = mutableSetOf<Int>()
-    val pages = buildList<@Composable (pageNumber: Int, pageCount: Int) -> Unit> {
-        if (isFollowTeamsCardShown) {
-            if (isOneWeekToWorldCup) {
-                add { pageNumber, pageCount ->
-                    CountdownPromoCard(
-                        dateInUtc = WORLD_CUP_KICKOFF_UTC,
-                        actionButtonLabelResId = R.string.sports_widget_country_selector_title,
-                        onClick = { onFollowTeam(CountrySelectorSource.COUNTDOWN_CARD_FOLLOW_TEAM_BUTTON) },
-                        onDismiss = null,
-                        pageNumber = pageNumber,
-                        pageCount = pageCount,
-                    )
-                }
-            } else {
-                add { pageNumber, pageCount ->
-                    FollowTeamPromoCard(
-                        onFollowTeam = onFollowTeam,
-                        pageNumber = pageNumber,
-                        pageCount = pageCount,
-                    )
-                }
-            }
-        } else if (selectedTeam != null && matchCardStates.isEmpty()) {
-            add { pageNumber, pageCount ->
-                FollowingPromoCard(
-                    team = selectedTeam,
-                    pageNumber = pageNumber,
-                    pageCount = pageCount,
-                )
-            }
+    val errorPageIndices = mutableSetOf<Int>()
+    val pages = buildList {
+        if (addCollapsedErrorPage(
+                isOneWeekToWorldCup = isOneWeekToWorldCup,
+                matchCardStates = matchCardStates,
+                errorState = errorState,
+                onRefresh = onRefresh,
+                errorPageIndices = errorPageIndices,
+            )
+        ) {
+            return@buildList
         }
+        addPromoPage(isOneWeekToWorldCup, isFollowTeamsCardShown, selectedTeam, matchCardStates, onFollowTeam)
 
         matchCardStates.forEach { matchCardState ->
             if (shouldDisplayChampionsCard(matchCardState.viewerOutcome)) {
                 championsPageIndices.add(size)
-                add { pageNumber, pageCount ->
-                    ChampionsCard(
-                        state = matchCardState,
-                        onMatchClicked = onMatchClicked,
-                        onGetCustomWallpaper = onGetCustomWallpaper,
-                        onRemove = onRemove,
-                        pageNumber = pageNumber,
-                        pageCount = pageCount,
-                    )
-                }
+                add(championsCardPage(matchCardState, onMatchClicked, onGetCustomWallpaper, onRemove))
             } else {
-                add { pageNumber, pageCount ->
-                    MatchCard(
-                        state = matchCardState,
-                        errorState = errorState,
-                        isTeamSelected = selectedTeam != null,
-                        onRefresh = onRefresh,
-                        onMatchClicked = onMatchClicked,
-                        pageNumber = pageNumber,
-                        pageCount = pageCount,
-                    )
-                }
+                add(matchCardPage(matchCardState, errorState, selectedTeam != null, onRefresh, onMatchClicked))
             }
         }
     }
-    return pages to championsPageIndices
+    return SportsCardPagesResult(pages, championsPageIndices, errorPageIndices)
+}
+
+/**
+ * When [errorState] is set and no live match exists in [matchCardStates], collapses the
+ * whole pager into a single [SportsWidgetErrorCard] page and returns `true`. Otherwise
+ * returns `false` without modifying the list — when a live match is present, [MatchCard]
+ * swaps the error in-line within that one card and the surrounding pages keep their
+ * content, so the page list (and the user's pager position) stays stable.
+ *
+ * During the pre-tournament one-week phase ([isOneWeekToWorldCup]), an error is also
+ * suppressed if [matchCardStates] is non-empty: there are no live scores to be wrong
+ * about, just a schedule the user already saw, so a stale cached schedule is more
+ * useful than an error banner. The error is only surfaced when the cache is empty —
+ * i.e. the user has nothing else to look at.
+ */
+@Suppress("LongParameterList")
+private fun MutableList<SportsPage>.addCollapsedErrorPage(
+    isOneWeekToWorldCup: Boolean,
+    matchCardStates: List<MatchCardState>,
+    errorState: SportCardErrorState?,
+    onRefresh: (LiveMatchRefreshSource) -> Unit,
+    errorPageIndices: MutableSet<Int>,
+): Boolean {
+    if (errorState == null) return false
+    val anyLive = matchCardStates.any { card ->
+        (card.matches + card.relatedMatches).any { it.matchStatus.isLive() }
+    }
+    if (anyLive) return false
+    if (isOneWeekToWorldCup && matchCardStates.isNotEmpty()) return false
+
+    errorPageIndices.add(size)
+    add(
+        SportsPage(type = SportsCardType.fromError(errorState)) { _, _ ->
+            SportsWidgetErrorCard(
+                error = errorState,
+                onRefresh = { onRefresh(LiveMatchRefreshSource.SPORTS_WIDGET_CARD_ERROR_BUTTON) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+    )
+    return true
+}
+
+/**
+ * Prepends the leading promo card that precedes the match cards: either the "follow
+ * your team" / pre-tournament countdown card (if the user hasn't followed a team yet),
+ * or the "you're following X" card (if a team is followed but no matches are available).
+ * Adds nothing when neither applies.
+ */
+private fun MutableList<SportsPage>.addPromoPage(
+    isOneWeekToWorldCup: Boolean,
+    isFollowTeamsCardShown: Boolean,
+    selectedTeam: Team?,
+    matchCardStates: List<MatchCardState>,
+    onFollowTeam: (CountrySelectorSource) -> Unit,
+) {
+    when {
+        isFollowTeamsCardShown -> when {
+            isOneWeekToWorldCup -> add(countdownFollowTeamPage(onFollowTeam))
+            // Suppress the "Keep tabs on the World Cup" promo once a champions card is in the pager
+            matchCardStates.any { shouldDisplayChampionsCard(it.viewerOutcome) } -> Unit
+            else -> add(followTeamPromoPage(onFollowTeam))
+        }
+        selectedTeam != null && matchCardStates.isEmpty() -> add(followingPromoPage(selectedTeam))
+    }
+}
+
+private fun countdownFollowTeamPage(
+    onFollowTeam: (CountrySelectorSource) -> Unit,
+): SportsPage = SportsPage(type = SportsCardType.COUNTDOWN_PROMO) { pageNumber, pageCount ->
+    CountdownPromoCard(
+        dateInUtc = WORLD_CUP_KICKOFF_UTC,
+        actionButtonLabelResId = R.string.sports_widget_country_selector_title,
+        onClick = { onFollowTeam(CountrySelectorSource.COUNTDOWN_CARD_FOLLOW_TEAM_BUTTON) },
+        onDismiss = null,
+        pageNumber = pageNumber,
+        pageCount = pageCount,
+    )
+}
+
+private fun followTeamPromoPage(
+    onFollowTeam: (CountrySelectorSource) -> Unit,
+): SportsPage = SportsPage(type = SportsCardType.FOLLOW_TEAM_PROMO) { pageNumber, pageCount ->
+    FollowTeamPromoCard(
+        onFollowTeam = onFollowTeam,
+        pageNumber = pageNumber,
+        pageCount = pageCount,
+    )
+}
+
+private fun followingPromoPage(
+    team: Team,
+): SportsPage = SportsPage(type = SportsCardType.FOLLOWING_PROMO) { pageNumber, pageCount ->
+    FollowingPromoCard(
+        team = team,
+        pageNumber = pageNumber,
+        pageCount = pageCount,
+    )
+}
+
+private fun championsCardPage(
+    state: MatchCardState,
+    onMatchClicked: (String?, String?, String?) -> Unit,
+    onGetCustomWallpaper: () -> Unit,
+    onRemove: () -> Unit,
+): SportsPage {
+    val type = when (state.viewerOutcome) {
+        is FollowedTeamOutcome.ThirdPlace -> SportsCardType.CHAMPIONS_THIRD_PLACE
+        else -> SportsCardType.CHAMPIONS_WINNER
+    }
+    return SportsPage(type = type) { pageNumber, pageCount ->
+        ChampionsCard(
+            state = state,
+            onMatchClicked = onMatchClicked,
+            onGetCustomWallpaper = onGetCustomWallpaper,
+            onRemove = onRemove,
+            pageNumber = pageNumber,
+            pageCount = pageCount,
+        )
+    }
+}
+
+private fun matchCardPage(
+    state: MatchCardState,
+    errorState: SportCardErrorState?,
+    isTeamSelected: Boolean,
+    onRefresh: (LiveMatchRefreshSource) -> Unit,
+    onMatchClicked: (String?, String?, String?) -> Unit,
+): SportsPage = SportsPage(type = SportsCardType.fromRound(state.round)) { pageNumber, pageCount ->
+    MatchCard(
+        state = state,
+        errorState = errorState,
+        isTeamSelected = isTeamSelected,
+        onRefresh = onRefresh,
+        onMatchClicked = onMatchClicked,
+        pageNumber = pageNumber,
+        pageCount = pageCount,
+    )
 }
 
 private fun shouldDisplayChampionsCard(followedTeamOutcome: FollowedTeamOutcome): Boolean =

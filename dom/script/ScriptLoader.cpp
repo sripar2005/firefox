@@ -64,8 +64,8 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/glean/DomMetrics.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/net/HttpBaseChannel.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "nsAboutProtocolUtils.h"
 #include "nsCRT.h"
 #include "nsContentCreatorFunctions.h"
@@ -1060,7 +1060,7 @@ nsresult ScriptLoader::StartLoadInternal(
 
   LOG(("ScriptLoadRequest (%p): mode=%u tracking=%d", aRequest,
        unsigned(aRequest->GetScriptLoadContext()->mScriptMode),
-       net::UrlClassifierCommon::IsTrackingClassificationFlag(
+       net::ChannelClassifierUtils::IsTrackingClassificationFlag(
            aRequest->GetScriptLoadContext()
                ->GetClassificationFlags()
                .thirdPartyFlags,
@@ -2598,6 +2598,11 @@ nsresult ScriptLoader::ProcessOffThreadRequest(ScriptLoadRequest* aRequest) {
           "request should not run synchronously but added to some queue.");
       return ProcessRequest(aRequest);
     }
+  } else if (aRequest->GetScriptLoadContext()->mInAsyncList) {
+    // This async request may already be in mLoadingAsyncRequests while its
+    // off-thread compilation finishes. Now that it is ready, move it to
+    // mLoadedAsyncRequests so ProcessPendingRequests can execute it.
+    MaybeMoveToLoadedList(aRequest);
   }
 
   // Process other scripts in the proper order.
@@ -3214,7 +3219,9 @@ nsresult ScriptLoader::EvaluateScriptElement(ScriptLoadRequest* aRequest) {
       !aRequest->GetScriptLoadContext()->mIsInline ||
       aRequest->IsModuleRequest();
   if (ignoreDestructiveWrites) {
-    ownerDoc->IncrementIgnoreDestructiveWritesCounter();
+    if (mDocument) {
+      mDocument->IncrementIgnoreDestructiveWritesCounter();
+    }
   }
 
   auto afterScript = MakeScopeExit([&] {
@@ -3235,7 +3242,9 @@ nsresult ScriptLoader::EvaluateScriptElement(ScriptLoadRequest* aRequest) {
     // 7. Decrement the ignore-destructive-writes counter of document, if it was
     // incremented in the earlier step.
     if (ignoreDestructiveWrites) {
-      ownerDoc->DecrementIgnoreDestructiveWritesCounter();
+      if (mDocument) {
+        mDocument->DecrementIgnoreDestructiveWritesCounter();
+      }
     }
   });
 
@@ -4730,7 +4739,7 @@ void ScriptLoader::ReportErrorToConsole(ScriptLoadRequest* aRequest,
   } else if (aResult == NS_ERROR_DOM_WEBEXT_CONTENT_SCRIPT_URI) {
     MOZ_ASSERT(!isScript);
     message = "WebExtContentScriptModuleSourceNotAllowed";
-  } else if (net::UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(
+  } else if (net::ChannelClassifierUtils::IsClassifierBlockingErrorCode(
                  aResult)) {
     // Blocking classifier error codes already show their own console messages.
     return;
@@ -4793,8 +4802,7 @@ void ScriptLoader::HandleLoadError(ScriptLoadRequest* aRequest,
    * We make a note of this script node by including it in a dedicated
    * array of blocked tracking nodes under its parent document.
    */
-  if (net::UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(
-          aResult)) {
+  if (net::ChannelClassifierUtils::IsClassifierBlockingErrorCode(aResult)) {
     nsCOMPtr<nsIContent> cont = do_QueryInterface(
         aRequest->GetScriptLoadContext()->GetScriptElementForUrlClassifier());
     mDocument->AddBlockedNodeByClassifier(cont);

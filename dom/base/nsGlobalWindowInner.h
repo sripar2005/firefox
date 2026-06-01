@@ -12,6 +12,7 @@
 #include "mozilla/FlushType.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
@@ -307,6 +308,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   void GetEventTargetParent(mozilla::EventChainPreVisitor& aVisitor) override;
 
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult
+  PreHandleEvent(mozilla::EventChainVisitor&) override;
   // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
   MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult
   PostHandleEvent(mozilla::EventChainPostVisitor& aVisitor) override;
@@ -683,6 +686,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void StoreSharedWorker(mozilla::dom::SharedWorker* aSharedWorker);
 
   void ForgetSharedWorker(mozilla::dom::SharedWorker* aSharedWorker);
+
+  void UpdateSharedWorkersLanguageOverride(const nsCString& aLanguageOverride);
 
  public:
   void Alert(nsIPrincipal& aSubjectPrincipal, mozilla::ErrorResult& aError);
@@ -1503,7 +1508,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   nsTArray<mozilla::WeakPtr<Document>> mDataDocumentsForMemoryReporting;
 
-  static InnerWindowByIdTable* sInnerWindowsById;
+  static mozilla::StaticAutoPtr<InnerWindowByIdTable> sInnerWindowsById;
 
   // Members in the mChromeFields member should only be used in chrome windows.
   // All accesses to this field should be guarded by a check of mIsChrome.

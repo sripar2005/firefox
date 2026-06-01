@@ -2,6 +2,7 @@
 tags = "condprof"
 support-files = [
   "chrome_cleanup_script.js",
+  "file_204_no_content.sjs",
   "file_WebNavigation_page1.html",
   "file_WebNavigation_page2.html",
   "file_WebNavigation_page3.html",
@@ -523,6 +524,8 @@ skip-if = [
 
 ["test_ext_tabs_splitViewId.html"]
 
+["test_ext_tabs_tabTracker_awaitTabReady.html"]
+
 ["test_ext_test.html"]
 skip-if = [
   "http2",
@@ -563,6 +566,8 @@ skip-if = [
   "http3",
   "os == 'android'", # Bug 1513544 (GeckoView is missing the windows API and ability to open private tabs)
 ]
+
+["test_ext_webnavigation_onCommitted.html"]
 
 ["test_ext_webrequest_and_proxy_filter.html"]
 skip-if = [

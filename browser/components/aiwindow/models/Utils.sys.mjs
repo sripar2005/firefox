@@ -87,6 +87,8 @@ export const MODEL_FEATURES = Object.freeze({
   ENABLE_TABLE_INSTRUCTIONS: "enable-table-instructions",
 });
 
+/** @typedef {(typeof MODEL_FEATURES)[keyof typeof MODEL_FEATURES]} ModelFeature */
+
 /**
  * Service types for different AI Window features
  */
@@ -132,7 +134,7 @@ export const FEATURE_PURPOSES = Object.freeze({
  * - Old clients will continue using old major version
  */
 export const FEATURE_MAJOR_VERSIONS = Object.freeze({
-  [MODEL_FEATURES.CHAT]: 4,
+  [MODEL_FEATURES.CHAT]: 5,
   [MODEL_FEATURES.TITLE_GENERATION]: 1,
   [MODEL_FEATURES.CONVERSATION_STARTERS_SIDEBAR_SYSTEM]: 1,
   [MODEL_FEATURES.CONVERSATION_SUGGESTIONS_SIDEBAR_STARTER]: 2,
@@ -190,6 +192,18 @@ export function parseVersion(versionString) {
 }
 
 /**
+ * Verifies that the RS record matches the current Fx build
+ *
+ * @param {string} recordVersion {majorVersion}.{minorVersion}
+ * @param {string} comparisonVersion major version supported by this build
+ * @returns {boolean} whether or not major version in recordVersion matches comparisonVersion
+ */
+export function checkMajorVersion(recordVersion, comparisonVersion) {
+  const parsed = parseVersion(recordVersion);
+  return parsed && parsed.major == comparisonVersion;
+}
+
+/**
  * Selects the main configuration for a feature based on version and model preferences.
  *
  * Remote Settings maintains only the latest minor version for each (feature, model, major_version) combination.
@@ -212,49 +226,66 @@ function selectMainConfig(
   { majorVersion, userModel, modelChoiceId, feature }
 ) {
   // Filter to configs matching the required major version
-  const sameMajor = featureConfigs.filter(config => {
-    const parsed = parseVersion(config.version);
-    return parsed && parsed.major === majorVersion;
-  });
+  const sameMajor = featureConfigs.filter(config =>
+    checkMajorVersion(config.version, majorVersion)
+  );
 
   if (sameMajor.length === 0) {
     console.warn(`Missing featureConfigs for major version ${majorVersion}`);
     return null;
   }
 
-  // We only allow customization of main assistant model unless user is
-  //  using custom endpoint (which is handled by _applyCustomEndpointModel)
+  // We only allow customization of main assistant model ("chat" feature)
+  // We figure out which model the user wants and load prompts for that model
+  // If we can't find a config for the user selection, we load the generic one
   if (feature === MODEL_FEATURES.CHAT) {
-    // If user specified a model preference, find that model's config
-    if (userModel) {
-      const userModelConfig = sameMajor.find(
-        config => config.model === userModel
-      );
-      if (userModelConfig) {
-        return userModelConfig;
-      }
-      // User's model not found in this major version - fall through to defaults
-      console.warn(
-        `User model "${userModel}" not found for major version ${majorVersion} for feature '${feature}', using modelChoice ${modelChoiceId}`
-      );
-    }
+    if (modelChoiceId !== "0") {
+      // First check the choice ID. If it's not 0, use the model associated with that ID
 
-    // If user specified a model preference, find that model's config
-    if (modelChoiceId) {
+      // Look for config based on model choice ID
       const userModelConfig = sameMajor.find(
         config => config.model_choice_id == modelChoiceId
       );
+      // Return if we found it
       if (userModelConfig) {
         return userModelConfig;
       }
-      // User's model not found in this major version - fall through to defaults
+      // Config for user's model choice ID not found in this major version - fall through to generic
       console.warn(
-        `User model choice "${modelChoiceId}" not found for major version ${majorVersion} for feature '${feature}', using default`
+        `User model choice "${modelChoiceId}" not found for major version ${majorVersion} for feature '${feature}', using generic`
+      );
+    } else {
+      // If the choice ID is 0 or null, check the provided model name
+
+      // Look for config based on the user-provided model name
+      // This is the case where the user provides a model name for which we have a fine-tuned prompt
+      const userModelConfig = sameMajor.find(
+        config => config.model === userModel
+      );
+      // Return if we found it
+      if (userModelConfig) {
+        return userModelConfig;
+      }
+      // Config for user-provided model name not found in this major version - fall through to generic
+      console.warn(
+        `User model "${userModel}" not found for major version ${majorVersion} for feature '${feature}', using generic`
       );
     }
+
+    // If both cases above failed, load the generic config
+    const genericConfig = sameMajor.find(
+      config => config.model === GENERIC_MODEL_NAME
+    );
+    // Inject the user model if one was provided
+    // If one wasn't, we return the generic config plain, which will intentionally break inference
+    if (userModel) {
+      genericConfig.model = userModel;
+    }
+    return genericConfig;
   }
 
-  // No user model pref OR user's model not found: use default
+  // **For all features other than "chat"**
+  // If no user model pref OR user's model not found: use default
   const defaultConfig = sameMajor.find(config => config.is_default === true);
   if (defaultConfig) {
     return defaultConfig;
@@ -380,47 +411,35 @@ export class openAIEngine {
   }
 
   /**
-   * Overrides the model config with generic config
-   *
-   * @param {Array} featureConfigs - All configs for the feature from Remote Settings
-   * @param {number} majorVersion - Required major version for the feature
-   *
-   * @private
-   */
-  _loadGenericChatPrompt(featureConfigs, majorVersion) {
-    console.warn(`Custom endpoint detected. Using generic chat prompt`);
-    this.#configs[MODEL_FEATURES.CHAT] = selectMainConfig(featureConfigs, {
-      majorVersion,
-      userModel: GENERIC_MODEL_NAME,
-      modelChoiceId: "",
-      feature: MODEL_FEATURES.CHAT,
-    });
-  }
-
-  /**
    * Applies configuration from Remote Settings with version-aware selection.
    *
    * @param {string} feature - The feature identifier
    * @param {Array} allRecords - All Remote Settings records
    * @param {Array} featureConfigs - Remote Settings configs for this feature
    * @param {number} majorVersion - Required major version
+   * @param {string} [modelChoiceIdOverride] - Optional model choice ID to override the global preference
    * @private
    */
   _applyRemoteSettingsConfig(
     feature,
     allRecords,
     featureConfigs,
-    majorVersion
+    majorVersion,
+    modelChoiceIdOverride = null
   ) {
     if (!featureConfigs.length) {
       const msg = `No Remote Settings records found for feature: ${feature}`;
       console.error(msg);
-      throw new Error(msg);
+      const err = new Error(msg);
+      err.clientReason = "remoteSettingsUnavailable";
+      throw err;
     }
 
     const userModel = Services.prefs.getStringPref(MODEL_PREF, "");
     const hasCustomModel = Services.prefs.prefHasUserValue(MODEL_PREF);
-    const modelChoiceId = Services.prefs.getStringPref(MODEL_CHOICE_PREF, "");
+    const modelChoiceId =
+      modelChoiceIdOverride ??
+      Services.prefs.getStringPref(MODEL_CHOICE_PREF, "");
 
     const mainConfig = selectMainConfig(featureConfigs, {
       majorVersion,
@@ -432,7 +451,9 @@ export class openAIEngine {
     if (!mainConfig) {
       const msg = `No matching model config found for feature: ${feature} with major version ${majorVersion};`;
       console.error(msg);
-      throw new Error(msg);
+      const err = new Error(msg);
+      err.clientReason = "modelConfigUnavailable";
+      throw err;
     }
 
     this.feature = feature;
@@ -508,12 +529,13 @@ export class openAIEngine {
    *
    * @param {string} feature - The feature identifier from MODEL_FEATURES
    * @param {number} majorVersionOverride - Used to override hardcoded major version
+   * @param {string} [modelChoiceId] - Optional model choice ID to override the global preference
    * @returns {Promise<void>}
    *   Sets this.feature to the feature name
    *   Sets this.model to the selected model ID
    *   Sets this.#configs to contain feature's and additional_components' configs
    */
-  async loadConfig(feature, majorVersionOverride = null) {
+  async loadConfig(feature, majorVersionOverride = null, modelChoiceId = null) {
     const client = openAIEngine.getRemoteClient();
     const allRecords = await client.get();
 
@@ -528,15 +550,9 @@ export class openAIEngine {
       feature,
       allRecords,
       featureConfigs,
-      majorVersion
+      majorVersion,
+      modelChoiceId
     );
-
-    if (openAIEngine.hasCustomEndpoint()) {
-      if (feature === MODEL_FEATURES.CHAT) {
-        this._loadGenericChatPrompt(featureConfigs, majorVersion);
-      }
-      this._applyCustomEndpointModel();
-    }
   }
 
   /**
@@ -597,7 +613,9 @@ export class openAIEngine {
     }
 
     console.error(`Failed to load prompt for ${feature}`);
-    throw new Error(`Failed to load prompt for ${feature}`);
+    const err = new Error(`Failed to load prompt for ${feature}`);
+    err.clientReason = "promptLoadFailure";
+    throw err;
   }
 
   /**
@@ -607,16 +625,18 @@ export class openAIEngine {
    *   The feature name to use to retrieve remote settings for prompts.
    * @param {string | null} [flowId]
    *   Flow ID for correlating frontend and backend telemetry.
+   * @param {string} [modelChoiceId]
+   *   Model choice ID to override the global preference.
    * @returns {Promise<object>}
    *   Promise that will resolve to the configured engine instance.
    */
-  static async build(feature, flowId = null) {
+  static async build(feature, flowId = null, modelChoiceId = null) {
     const engine = new openAIEngine();
 
-    await engine.loadConfig(feature);
+    await engine.loadConfig(feature, null, modelChoiceId);
 
     const config = engine.getConfig(feature);
-    const engineId = `${DEFAULT_ENGINE_ID}-${feature}`;
+    const engineId = `${DEFAULT_ENGINE_ID}-${feature}-${engine.model}`;
     engine.#engineId = engineId;
     engine.#serviceType =
       config?.service_type ?? getDefaultServiceType(feature);
@@ -906,7 +926,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   openAIEngine,
   "endpoint",
   ENDPOINT_PREF,
-  ""
+  "https://mlpa-prod-prod-mozilla.global.ssl.fastly.net/v1"
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(openAIEngine, "apiKey", APIKEY_PREF, "");

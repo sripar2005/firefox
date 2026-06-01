@@ -111,7 +111,9 @@
 #include "AlternateServices.h"
 #include "NetworkMarker.h"
 #include "nsIDNSRecord.h"
+#include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "nsICompressConvStats.h"
 #include "nsCORSListenerProxy.h"
 #include "nsISocketProvider.h"
@@ -125,7 +127,6 @@
 #include "HttpTransactionParent.h"
 #include "ThirdPartyUtil.h"
 #include "InterceptedHttpChannel.h"
-#include "../../cache2/CacheFileUtils.h"
 #include "nsINetworkLinkService.h"
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
@@ -135,7 +136,7 @@
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/net/OpaqueResponseUtils.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/net/URLPatternGlue.h"
 #include "mozilla/net/urlpattern_glue.h"
 #include "HttpTrafficAnalyzer.h"
@@ -524,8 +525,8 @@ nsresult nsHttpChannel::Init(nsIURI* uri, uint32_t caps, nsProxyInfo* proxyInfo,
 nsresult nsHttpChannel::AddSecurityMessage(const nsAString& aMessageTag,
                                            const nsAString& aMessageCategory) {
   if (mWarningReporter) {
-    return mWarningReporter->ReportSecurityMessage(aMessageTag,
-                                                   aMessageCategory);
+    RefPtr<HttpChannelSecurityWarningReporter> reporter(mWarningReporter);
+    return reporter->ReportSecurityMessage(aMessageTag, aMessageCategory);
   }
   return HttpBaseChannel::AddSecurityMessage(aMessageTag, aMessageCategory);
 }
@@ -535,8 +536,8 @@ nsHttpChannel::LogBlockedCORSRequest(const nsAString& aMessage,
                                      const nsACString& aCategory,
                                      bool aIsWarning) {
   if (mWarningReporter) {
-    return mWarningReporter->LogBlockedCORSRequest(aMessage, aCategory,
-                                                   aIsWarning);
+    RefPtr<HttpChannelSecurityWarningReporter> reporter(mWarningReporter);
+    return reporter->LogBlockedCORSRequest(aMessage, aCategory, aIsWarning);
   }
   return NS_ERROR_UNEXPECTED;
 }
@@ -546,8 +547,9 @@ nsHttpChannel::LogMimeTypeMismatch(const nsACString& aMessageName,
                                    bool aWarning, const nsAString& aURL,
                                    const nsAString& aContentType) {
   if (mWarningReporter) {
-    return mWarningReporter->LogMimeTypeMismatch(aMessageName, aWarning, aURL,
-                                                 aContentType);
+    RefPtr<HttpChannelSecurityWarningReporter> reporter(mWarningReporter);
+    return reporter->LogMimeTypeMismatch(aMessageName, aWarning, aURL,
+                                         aContentType);
   }
   return NS_ERROR_UNEXPECTED;
 }
@@ -825,8 +827,7 @@ nsresult nsHttpChannel::ContinuePrepareToConnect() {
 
 void nsHttpChannel::HandleContinueCancellingByURLClassifier(
     nsresult aErrorCode) {
-  MOZ_ASSERT(
-      UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(aErrorCode));
+  MOZ_ASSERT(ChannelClassifierUtils::IsClassifierBlockingErrorCode(aErrorCode));
   MOZ_ASSERT(!mCallOnResume, "How did that happen?");
 
   if (mSuspendCount) {
@@ -1724,6 +1725,7 @@ void nsHttpChannel::DoNotifyListenerCleanup() {
 
 void nsHttpChannel::ReleaseListeners() {
   HttpBaseChannel::ReleaseListeners();
+
   mChannelClassifier = nullptr;
   mWarningReporter = nullptr;
   mEarlyHintObserver = nullptr;
@@ -2181,7 +2183,17 @@ nsresult nsHttpChannel::InitTransaction() {
 
   nsILoadInfo::IPAddressSpace parentAddressSpace =
       nsILoadInfo::IPAddressSpace::Unknown;
-  if (!bc) {
+  // For worker-initiated requests, read IP address space from the policy
+  // container which carries the parent document's address space.
+  Maybe<dom::ClientInfo> clientInfo = mLoadInfo->GetClientInfo();
+  if (clientInfo.isSome() && clientInfo->Type() != dom::ClientType::Window) {
+    nsCOMPtr<nsIPolicyContainer> policyContainer =
+        mLoadInfo->GetPolicyContainer();
+    if (policyContainer) {
+      parentAddressSpace =
+          PolicyContainer::Cast(policyContainer)->GetIPAddressSpace();
+    }
+  } else if (!bc) {
     parentAddressSpace = mLoadInfo->GetParentIpAddressSpace();
   } else {
     parentAddressSpace = bc->GetCurrentIPAddressSpace();
@@ -2484,7 +2496,8 @@ nsresult nsHttpChannel::CallOnStartRequest() {
           mListener, &HttpBaseChannel::CallTypeSniffers);
     } else if (opaqueResponse == OpaqueResponse::Sniff) {
       MOZ_DIAGNOSTIC_ASSERT(mORB);
-      nsresult rv = mORB->EnsureOpaqueResponseIsAllowedAfterSniff(this);
+      RefPtr<OpaqueResponseBlocker> orb(mORB);
+      nsresult rv = orb->EnsureOpaqueResponseIsAllowedAfterSniff(this);
 
       if (NS_FAILED(rv)) {
         return rv;
@@ -2628,13 +2641,23 @@ nsresult nsHttpChannel::CallOnStartRequest() {
 NS_IMETHODIMP nsHttpChannel::GetHttpProxyConnectResponseCode(
     int32_t* aResponseCode) {
   NS_ENSURE_ARG_POINTER(aResponseCode);
-
-  if (mConnectionInfo && mConnectionInfo->UsingConnect()) {
-    *aResponseCode = mProxyConnectResponseCode;
+  if (mProxyConnectResponseHead) {
+    *aResponseCode = mProxyConnectResponseHead->Status();
+  } else if (mConnectionInfo && mConnectionInfo->UsingConnect()) {
+    *aResponseCode = 0;
   } else {
     *aResponseCode = -1;
   }
   return NS_OK;
+}
+
+NS_IMETHODIMP nsHttpChannel::GetHttpProxyResponseHeader(
+    const nsACString& aHeader, nsACString& aValue) {
+  if (mProxyConnectResponseHead) {
+    return mProxyConnectResponseHead->GetHeader(nsHttp::ResolveAtom(aHeader),
+                                                aValue);
+  }
+  return NS_ERROR_NOT_AVAILABLE;
 }
 
 nsresult nsHttpChannel::ProcessFailedProxyConnect(uint32_t httpStatus) {
@@ -3787,8 +3810,8 @@ nsresult nsHttpChannel::ContinueProcessNormal2(nsresult rv) {
   // be created without the dictionary attached, causing decompression to fail.
   // The dictionary prefetch callback (in PrepareToConnect) will call Resume()
   // when ready, which will re-invoke ContinueProcessNormal2 via mCallOnResume.
-  if (mDictDecompress && mUsingDictionary && mShouldSuspendForDictionary &&
-      !mDictDecompress->DictionaryReady()) {
+  if (mIsDictionaryCompressed && mDictDecompress && mUsingDictionary &&
+      mShouldSuspendForDictionary && !mDictDecompress->DictionaryReady()) {
     LOG_DICTIONARIES(
         ("nsHttpChannel::ContinueProcessNormal2 [this=%p] Suspending before "
          "creating decompressor, waiting for dictionary",
@@ -3806,6 +3829,9 @@ nsresult nsHttpChannel::ContinueProcessNormal2(nsresult rv) {
 }
 
 nsresult nsHttpChannel::ContinueProcessNormal3() {
+  if (mCanceled) {
+    return CallOnStartRequest();
+  }
   nsresult rv = NS_OK;
 
   // Finish post-ParseDictionary work, must be done after waiting if Suspended
@@ -6194,6 +6220,25 @@ nsresult nsHttpChannel::UpdateCacheEntryHeaders(nsICacheEntry* entry,
   rv = entry->SetMetaDataElement("original-response-headers", head.get());
   if (NS_FAILED(rv)) return rv;
 
+  // Store No-Vary-Search header in cache metadata and notify the secondary
+  // index so variant URLs can match this entry on future cache lookups.
+  nsAutoCString noVarySearch;
+  if (StaticPrefs::network_cache_no_vary_search() &&
+      NS_SUCCEEDED(
+          mResponseHead->GetHeader(nsHttp::No_Vary_Search, noVarySearch)) &&
+      !noVarySearch.IsEmpty()) {
+    rv = entry->SetMetaDataElement("no-vary-search", noVarySearch.get());
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    if (mCacheEntryURI) {
+      if (auto* svc = CacheStorageService::Self()) {
+        svc->NoteNoVarySearchEntry(entry, mCacheEntryURI);
+      }
+    }
+  }
+
   // Indicate we have successfully finished setting metadata on the cache
   // entry.
   return entry->MetaDataReady();
@@ -7064,8 +7109,8 @@ nsHttpChannel::Cancel(nsresult status) {
   // other reason, for example because we've received notification about our
   // parent process side channel being canceled, in which case we cannot expect
   // that CancelByURLClassifier() would have handled this case.
-  if (UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(status) &&
-      !UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(mStatus)) {
+  if (ChannelClassifierUtils::IsClassifierBlockingErrorCode(status) &&
+      !ChannelClassifierUtils::IsClassifierBlockingErrorCode(mStatus)) {
     MOZ_CRASH_UNSAFE_PRINTF("Blocking classifier error %" PRIx32
                             " need to be handled by CancelByURLClassifier()",
                             static_cast<uint32_t>(status));
@@ -7100,8 +7145,7 @@ nsHttpChannel::Cancel(nsresult status) {
 
 NS_IMETHODIMP
 nsHttpChannel::CancelByURLClassifier(nsresult aErrorCode) {
-  MOZ_ASSERT(
-      UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(aErrorCode));
+  MOZ_ASSERT(ChannelClassifierUtils::IsClassifierBlockingErrorCode(aErrorCode));
   MOZ_ASSERT(NS_IsMainThread());
   // We should never have a pump open while a CORS preflight is in progress.
   MOZ_ASSERT_IF(mPreflightChannel, !mCachePump);
@@ -7154,8 +7198,7 @@ nsHttpChannel::CancelByURLClassifier(nsresult aErrorCode) {
 }
 
 void nsHttpChannel::ContinueCancellingByURLClassifier(nsresult aErrorCode) {
-  MOZ_ASSERT(
-      UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(aErrorCode));
+  MOZ_ASSERT(ChannelClassifierUtils::IsClassifierBlockingErrorCode(aErrorCode));
   MOZ_ASSERT(NS_IsMainThread());
   // We should never have a pump open while a CORS preflight is in progress.
   MOZ_ASSERT_IF(mPreflightChannel, !mCachePump);
@@ -7180,7 +7223,7 @@ nsresult nsHttpChannel::CancelInternal(nsresult status) {
   LOG(("nsHttpChannel::CancelInternal [this=%p]\n", this));
   bool channelClassifierCancellationPending =
       !!LoadChannelClassifierCancellationPending();
-  if (UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(status)) {
+  if (ChannelClassifierUtils::IsClassifierBlockingErrorCode(status)) {
     StoreChannelClassifierCancellationPending(0);
   }
 
@@ -7270,6 +7313,25 @@ nsresult nsHttpChannel::CancelInternal(nsresult status) {
     // to safe-browsing protection, we need to AsyncAbort the channel now.
     needAsyncAbort = false;
     (void)AsyncAbort(status);
+  }
+
+  // If suspended waiting for dictionary prefetch, unblock it so the channel
+  // can proceed to cleanup. The prefetch callback may never fire, so we must
+  // not rely on it to call Resume().
+  if (mSuspendedForDictionary) {
+    LOG(
+        ("nsHttpChannel::CancelInternal resuming dictionary-suspended channel "
+         "[this=%p]\n",
+         this));
+    mSuspendedForDictionary = false;
+    mCallOnResume = nullptr;
+    // Null out the already-cancelled pumps so Resume() won't re-trigger
+    // their OnStopRequest before AsyncAbort's DoNotifyListener can call
+    // OnStartRequest on our listener.
+    mTransactionPump = nullptr;
+    mCachePump = nullptr;
+    Resume();
+    needAsyncAbort = true;
   }
 
   // If we already have mCallOnResume, AsyncAbort will be called in
@@ -8851,7 +8913,9 @@ nsHttpChannel::GetEssentialDomainCategory(nsCString& domain) {
   if (domain == "aus5.mozilla.org"_ns) {
     return EssentialDomainCategory::Aus5MozillaOrg;
   }
-  if (domain == "firefox.settings.services.mozilla.com"_ns) {
+  if (domain == "firefox.settings.services.mozilla.com"_ns ||
+      domain == "firefox-settings-attachments.cdn.mozilla.net"_ns ||
+      domain == "content-signature-2.cdn.mozilla.net"_ns) {
     return EssentialDomainCategory::RemoteSettings;
   }
   if (domain == "incoming.telemetry.mozilla.com"_ns) {
@@ -8913,8 +8977,8 @@ nsresult nsHttpChannel::ProcessLNAActions() {
   UpdateCurrentIpAddressSpace();
   mWaitingForLNAPermission = true;
   Suspend();
-  auto permissionKey = mTransaction->GetTargetIPAddressSpace() ==
-                               nsILoadInfo::IPAddressSpace::Local
+  auto targetAddressSpace = mTransaction->GetTargetIPAddressSpace();
+  auto permissionKey = targetAddressSpace == nsILoadInfo::IPAddressSpace::Local
                            ? LOOPBACK_NETWORK_PERMISSION_KEY
                            : LOCAL_NETWORK_PERMISSION_KEY;
   LNAPermission permissionUpdateResult =
@@ -9065,7 +9129,7 @@ nsHttpChannel::OnStartRequest(nsIRequest* request) {
       .AccumulateRawDuration(mSuspendTotalTime);
 
   if (mTransaction) {
-    mProxyConnectResponseCode = mTransaction->GetProxyConnectResponseCode();
+    mProxyConnectResponseHead = mTransaction->GetProxyConnectResponseHead();
     if (request == mTransactionPump) {
       StoreDataSentToChildProcess(mTransaction->DataSentToChildProcess());
     }
@@ -9254,6 +9318,7 @@ void nsHttpChannel::MaybeUpdateDocumentIPAddressSpaceFromCache() {
     NetAddr ipAddr;
     rv = ipAddr.InitFromString(ipAddrStr, port);
     NS_ENSURE_SUCCESS_VOID(rv);
+    mLoadInfo->SetIpAddressSpace(ipAddr.GetIpAddressSpace());
     bc->SetCurrentIPAddressSpace(ipAddr.GetIpAddressSpace());
   }
 }
@@ -9379,7 +9444,7 @@ nsresult nsHttpChannel::ContinueOnStartRequest2(nsresult result) {
        mStatus == NS_ERROR_NET_TIMEOUT || mStatus == NS_ERROR_NET_RESET)) {
     PushRedirectAsyncFunc(&nsHttpChannel::ContinueOnStartRequest3);
     if (NS_SUCCEEDED(ProxyFailover())) {
-      mProxyConnectResponseCode = 0;
+      mProxyConnectResponseHead.reset();
       return NS_OK;
     }
     PopRedirectAsyncFunc(&nsHttpChannel::ContinueOnStartRequest3);
@@ -9704,7 +9769,15 @@ static void RecordLNATelemetry(nsHttpChannel* aChannel, bool aLoadSuccess) {
 
   nsILoadInfo::IPAddressSpace parentAddressSpace =
       nsILoadInfo::IPAddressSpace::Unknown;
-  if (!bc) {
+  Maybe<dom::ClientInfo> clientInfo = loadInfo->GetClientInfo();
+  if (clientInfo.isSome() && clientInfo->Type() != dom::ClientType::Window) {
+    nsCOMPtr<nsIPolicyContainer> policyContainer =
+        loadInfo->GetPolicyContainer();
+    if (policyContainer) {
+      parentAddressSpace =
+          PolicyContainer::Cast(policyContainer)->GetIPAddressSpace();
+    }
+  } else if (!bc) {
     parentAddressSpace = loadInfo->GetParentIpAddressSpace();
   } else {
     parentAddressSpace = bc->GetCurrentIPAddressSpace();
@@ -10423,7 +10496,8 @@ nsresult nsHttpChannel::ContinueOnStopRequest(nsresult aStatus, bool aIsFromNet,
     MOZ_ASSERT(!LoadOnStopRequestCalled(),
                "We should not call OnStopRequest twice");
     StoreOnStopRequestCalled(true);
-    mListener->OnStopRequest(this, aStatus);
+    nsCOMPtr<nsIStreamListener> listener(mListener);
+    listener->OnStopRequest(this, aStatus);
   }
   StoreOnStopRequestCalled(true);
 
@@ -10605,8 +10679,8 @@ nsHttpChannel::OnDataAvailable(nsIRequest* request, nsIInputStream* input,
     } else {
       mOnDataAvailableStartTime = TimeStamp::Now();
     }
-    nsresult rv =
-        mListener->OnDataAvailable(this, input, mLogicalOffset, count);
+    nsCOMPtr<nsIStreamListener> listener = mListener;
+    nsresult rv = listener->OnDataAvailable(this, input, mLogicalOffset, count);
     if (NS_SUCCEEDED(rv)) {
       // by contract mListener must read all of "count" bytes, but
       // nsInputStreamPump is tolerant to seekable streams that violate that
@@ -10780,8 +10854,9 @@ nsHttpChannel::OnTransportStatus(nsITransport* trans, nsresult status,
 
     nsAutoCString host;
     mURI->GetHost(host);
+    nsCOMPtr<nsIProgressEventSink> progressSink(mProgressSink);
     if (!(mLoadFlags & LOAD_BACKGROUND)) {
-      mProgressSink->OnStatus(this, status, NS_ConvertUTF8toUTF16(host).get());
+      progressSink->OnStatus(this, status, NS_ConvertUTF8toUTF16(host).get());
     } else {
       nsCOMPtr<nsIParentChannel> parentChannel;
       NS_QueryNotificationCallbacks(this, parentChannel);
@@ -10792,8 +10867,7 @@ nsHttpChannel::OnTransportStatus(nsITransport* trans, nsresult status,
       // LOAD_BACKGROUND is checked again in |HttpChannelChild|, so the final
       // consumer won't get this event.
       if (SameCOMIdentity(parentChannel, mProgressSink)) {
-        mProgressSink->OnStatus(this, status,
-                                NS_ConvertUTF8toUTF16(host).get());
+        progressSink->OnStatus(this, status, NS_ConvertUTF8toUTF16(host).get());
       }
     }
 
@@ -10805,9 +10879,10 @@ nsHttpChannel::OnTransportStatus(nsITransport* trans, nsresult status,
       // Try to get mProgressSink if it was nulled out during OnStatus.
       if (!mProgressSink) {
         GetCallback(mProgressSink);
+        progressSink = mProgressSink;
       }
-      if (mProgressSink) {
-        mProgressSink->OnProgress(this, progress, progressMax);
+      if (progressSink) {
+        progressSink->OnProgress(this, progress, progressMax);
       }
     }
   }

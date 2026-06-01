@@ -736,10 +736,11 @@ add_task(async function testRestoreFirefoxLabsOptIns() {
     //   enrollment.
     //
     // Thus no live-* recipes are present, nor is optin-inactivePaused.
-    Assert.deepEqual(
-      manager.optIns.map(entry => entry.recipe.slug),
-      ["optin-active", "optin-activePaused", "optin-inactive"]
-    );
+    assertOptInSlugs(manager, [
+      ["optin-active", "force-enrollment"],
+      ["optin-activePaused", "nimbus-devtools"],
+      ["optin-inactive", "force-enrollment"],
+    ]);
 
     await RemoteSettingsExperimentLoader.prototype.enable.call(loader, ...args);
   });
@@ -750,18 +751,15 @@ add_task(async function testRestoreFirefoxLabsOptIns() {
   Assert.ok(loader.enable.calledOnce, "loader enabled");
 
   // live-inactivePaused is present in the list, but will be unavailable in Firefox Labs.
-  Assert.deepEqual(
-    manager.optIns.map(entry => entry.recipe.slug),
-    [
-      "optin-active",
-      "optin-activePaused",
-      "optin-inactive",
-      "live-active",
-      "live-activePaused",
-      "live-inactive",
-      "live-inactivePaused",
-    ]
-  );
+  assertOptInSlugs(manager, [
+    ["optin-active", "force-enrollment"],
+    ["optin-activePaused", "nimbus-devtools"],
+    ["optin-inactive", "force-enrollment"],
+    ["live-active", "rs-loader"],
+    ["live-activePaused", "rs-loader"],
+    ["live-inactive", "rs-loader"],
+    ["live-inactivePaused", "rs-loader"],
+  ]);
 
   await NimbusTestUtils.cleanupManager([
     "live-active",
@@ -810,14 +808,11 @@ add_task(async function testRegisterOptIn() {
     );
   }
 
-  Assert.deepEqual(
-    manager.optIns.map(entry => [entry.recipe.slug, entry.source]),
-    [
-      ["foo", "nimbus-devtools"],
-      ["bar", "nimbus-devtools"],
-      ["baz", "nimbus-devtools"],
-    ]
-  );
+  assertOptInSlugs(manager, [
+    ["foo", "nimbus-devtools"],
+    ["bar", "nimbus-devtools"],
+    ["baz", "nimbus-devtools"],
+  ]);
 
   for (const { slug } of recipes) {
     Assert.ok(manager.unregisterOptIn(slug), `Can unregister opt-in ${slug}`);
@@ -978,16 +973,14 @@ add_task(async function testRegisterOptInConflicts() {
     }),
   });
 
-  const currentOptIns = manager.optIns
-    .toSorted((a, b) => a.recipe.slug.localeCompare(b.recipe.slug))
-    .map(entry => [entry.recipe.slug, entry.source]);
-
-  Assert.deepEqual(currentOptIns, [
+  const expectedOptIns = [
     ["active-fxlab-devtools", "nimbus-devtools"],
     ["active-fxlab-rs", "rs-loader"],
     ["inactive-fxlab-devtools", "nimbus-devtools"],
     ["inactive-fxlab-rs", "rs-loader"],
-  ]);
+  ];
+
+  assertOptInSlugs(manager, expectedOptIns);
 
   function makeOptInRecipe(slug) {
     return NimbusTestUtils.factories.recipe.withFeatureConfig(
@@ -1038,11 +1031,9 @@ add_task(async function testRegisterOptInConflicts() {
     "Cannot register an opt-in with the same slug as a past non-enrollment enrollment with the same source"
   );
 
-  Assert.deepEqual(
-    manager.optIns
-      .toSorted((a, b) => a.recipe.slug.localeCompare(b.recipe.slug))
-      .map(entry => [entry.recipe.slug, entry.source]),
-    currentOptIns,
+  assertOptInSlugs(
+    manager,
+    expectedOptIns,
     "The list of opt-ins did not change"
   );
 
@@ -1053,6 +1044,135 @@ add_task(async function testRegisterOptInConflicts() {
     "active-rollout-devtools",
     "active-experiment-rs",
   ]);
+
+  await cleanup();
+});
+
+add_task(async function testForceEnrollMultifeature() {
+  const { manager, cleanup } = await NimbusTestUtils.setupTest({
+    features: [
+      new ExperimentFeature("test-feature-1", { variables: {} }),
+      new ExperimentFeature("test-feature-2", { variables: {} }),
+    ],
+  });
+
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe("recipe-1", {
+      branches: [
+        {
+          slug: "control",
+          ratio: 1,
+          features: [
+            {
+              featureId: "test-feature-1",
+              value: {},
+            },
+            {
+              featureId: "test-feature-2",
+              value: {},
+            },
+          ],
+        },
+      ],
+    }),
+    "test"
+  );
+
+  Assert.ok(
+    manager.store.get("recipe-1")?.active,
+    "Enrollment in recipe-1 is active"
+  );
+
+  const recipe = NimbusTestUtils.factories.recipe("recipe-2", {
+    branches: [
+      {
+        slug: "control",
+        ratio: 1,
+        features: [
+          {
+            featureId: "test-feature-1",
+            value: {},
+          },
+          {
+            featureId: "test-feature-2",
+            value: {},
+          },
+        ],
+      },
+    ],
+  });
+
+  const result = manager.canEnroll(recipe);
+  Assert.ok(!result.ok);
+  Assert.equal(result.reason, "enrolled-in-feature");
+  Assert.deepEqual(Array.from(result.conflictingEnrollments), ["recipe-1"]);
+
+  manager.forceEnroll(recipe, "control");
+
+  Assert.ok(
+    !manager.store.get("recipe-1").active,
+    "Enrollment in recipe-1 is inactive"
+  );
+  Assert.ok(
+    manager.store.get("optin-recipe-2")?.active,
+    "Enrollment in recipe-2 is active"
+  );
+
+  manager.unenroll("optin-recipe-2", "test");
+
+  await cleanup();
+});
+
+// `ExperimentAPI.init()` is now called by multiple consumers. If a second
+// caller arrives while the first is still doing init work, the second caller's
+// `await init()` shouldn't resolve until the first caller's work has
+// actually completed. See Bug 2042553
+add_task(async function test_concurrent_init_callers_await_real_completion() {
+  const { sandbox, loader, cleanup } = await NimbusTestUtils.setupTest({
+    init: false,
+  });
+
+  // Gate _rsLoader.enable() so the first init() can be held in flight
+  const enableGate = Promise.withResolvers();
+  const realEnable = loader.enable.bind(loader);
+  sandbox.stub(loader, "enable").callsFake(async (...args) => {
+    await enableGate.promise;
+    return realEnable(...args);
+  });
+
+  // Kick off both callers without awaiting, and capture loader state at the
+  // moment the second call resolves
+  const p1 = ExperimentAPI.init();
+  let hasUpdatedOnceWhenP2Resolved = null;
+  const p2 = ExperimentAPI.init().then(result => {
+    hasUpdatedOnceWhenP2Resolved = loader._hasUpdatedOnce;
+    return result;
+  });
+
+  // Unblock init now that both callers are pending
+  enableGate.resolve();
+
+  const [result1, result2] = await Promise.all([p1, p2]);
+
+  Assert.strictEqual(result1, true, "First caller returned true");
+  Assert.strictEqual(
+    result2,
+    false,
+    "Second caller returned false (init was already in flight)"
+  );
+  Assert.strictEqual(
+    hasUpdatedOnceWhenP2Resolved,
+    true,
+    "Second init() did not resolve until the RS loader had actually finished updating"
+  );
+
+  // A subsequent call after completion still returns false
+  const result3 = await ExperimentAPI.init();
+  Assert.strictEqual(
+    result3,
+    false,
+    "Post-completion caller returned false (init already done)"
+  );
 
   await cleanup();
 });

@@ -478,6 +478,11 @@
   value: true
   mirror: always
 
+- name: apz.autoscroll.scroll_wheel_cooldown
+  type: RelaxedAtomicInt32
+  value: 500
+  mirror: always
+
 - name: apz.axis_lock.breakout_angle
   type: AtomicFloat
   value: float(M_PI / 8.0)    # 22.5 degrees
@@ -3977,6 +3982,13 @@
   value: 0
   mirror: always
 
+# Enable the Picture-in-Picture API
+- name: dom.media-pip.enabled
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+  rust: true
+
 # User pref to control whether Private Attribution
 # information should be collected / submitted.
 - name: dom.private-attribution.submission.enabled
@@ -4680,7 +4692,7 @@
 # Speculatively compile link preload scripts
 - name: dom.script_loader.external_scripts.speculate_link_preload.enabled
   type: bool
-  value: false
+  value: true
   mirror: always
 
 # For testing purposes only: Cache stencil across navigation
@@ -4979,14 +4991,6 @@
   value: false
   mirror: always
   rust: true
-
-# Whether to lift select parser restrictions per the updated HTML spec,
-# removing the "in select" insertion mode and handling <select> via
-# scope-based checks in "in body" mode.
-- name: dom.lift_select_parser_restrictions.enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
 
 - name: dom.send_after_paint_to_content
   type: bool
@@ -5390,7 +5394,7 @@
 # and disable this optimization for a site.
 - name: dom.timeout.defer_during_load
   type: bool
-  value: true
+  value: false
   mirror: always
 
 # Sites we shouldn't defer timeouts and intervals while loading a page.
@@ -6437,6 +6441,15 @@
 - name: extensions.webextensions.allow_executeScript_in_moz_extension
   type: bool
   value: false
+  mirror: always
+
+# Whether file:-access requires another opt-in besides host permissions.
+# When false, file access is granted together with the "<all_urls>" permission
+# ("Access your data for all websites"). When true, access to file:-schemes
+# requires an additional opt-in by the user, on top of the host permission.
+- name: extensions.webextensions.fileSchemeAccess.requireOptIn
+  type: RelaxedAtomicBool
+  value: true
   mirror: always
 
 # Prior to bug 2013389 and bug 2017797, calling structuredClone within a
@@ -9382,6 +9395,20 @@
   mirror: always
   set_spidermonkey_pref: always
 
+  # Experimental support for import text in JavaScript.
+- name: javascript.options.experimental.import_text
+  type: bool
+  value: true
+  mirror: always
+  set_spidermonkey_pref: always
+
+  # Experimental support for Intl Locale Info in JavaScript.
+- name: javascript.options.experimental.intl_locale_info
+  type: bool
+  value: true
+  mirror: always
+  set_spidermonkey_pref: startup
+
 #ifdef NIGHTLY_BUILD
   # Experimental support for Async Iterator Helpers in JavaScript.
 -   name: javascript.options.experimental.async_iterator_helpers
@@ -9410,13 +9437,6 @@
   value: false
   mirror: always
   set_spidermonkey_pref: startup
-
-  # Experimental support for import text in JavaScript.
-- name: javascript.options.experimental.import_text
-  type: bool
-  value: false
-  mirror: always
-  set_spidermonkey_pref: always
 
   # Experimental support for Promise.allKeyed in JavaScript.
 - name: javascript.options.experimental.promise_allkeyed
@@ -9465,20 +9485,6 @@
   value: false
   mirror: always
   set_spidermonkey_pref: always
-
-  # Experimental support for Error.stackTraceLimit
-- name: javascript.options.experimental.error_stack_trace_limit
-  type: bool
-  value: false
-  mirror: always
-  set_spidermonkey_pref: startup
-
-  # Experimental support for Intl Locale Info in JavaScript.
-- name: javascript.options.experimental.intl_locale_info
-  type: bool
-  value: false
-  mirror: always
-  set_spidermonkey_pref: startup
 #endif  // NIGHTLY_BUILD
 
   # Capture stack traces for OOM
@@ -9532,6 +9538,12 @@
   value: true
   mirror: always
   set_spidermonkey_pref: always
+
+- name: javascript.options.experimental.error_stack_trace_limit
+  type: bool
+  value: true
+  mirror: always
+  set_spidermonkey_pref: startup
 
 # Whether the non-standard object.toSource() path is enabled in ValueToSource
 # for realms without the toSource/uneval builtins.
@@ -9701,6 +9713,12 @@
     value: false
     mirror: always
     set_spidermonkey_pref: always
+
+- name: javascript.options.wasm_components
+  type: bool
+  value: false
+  mirror: always
+  set_spidermonkey_pref: always
 
 #if defined(ENABLE_WASM_SIMD)
 #if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86)
@@ -10452,6 +10470,12 @@
   value: true
   mirror: always
 
+# Expiration deadline for the stylesheet cache.
+- name: layout.css.stylesheet-cache.timeout_ms
+  type: uint32_t
+  value: 15000
+  mirror: always
+
 # Whether the `-moz-control-character-visibility` property is exposed to
 # content.
 #
@@ -10571,6 +10595,13 @@
 - name: layout.css.basic-shape-shape.enabled
   type: RelaxedAtomicBool
   value: true
+  mirror: always
+  rust: true
+
+# Is support for CSS Borders 4 corner-shape enabled?
+- name: layout.css.corner-shape.enabled
+  type: RelaxedAtomicBool
+  value: false
   mirror: always
   rust: true
 
@@ -11651,16 +11682,13 @@
 #endif
   mirror: always
 
-# Enable the support to position absoluetly positioned frames properly across
-# fragmentainers (Bug 1994316).
-#
-# Note: Layout code should use
-# nsPresContext::FragmentainerAwarePositioningEnabled() rather than checking
-# this pref directly. This ensures a given frame tree handles abspos
-# fragmentation consistently even if the actual pref value changes.
-- name: layout.abspos.fragmentainer-aware-positioning.enabled
+# Enable the spec-compliant behavior to consider the first and last inline
+# fragments when computing the inline containing block's rectangle for
+# absolutely positioned frames per
+# https://drafts.csswg.org/css-position-3/#absolute-cb
+- name: layout.abspos.fragment-aware-inline-cb.enabled
   type: bool
-  value: true
+  value: false
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -11900,7 +11928,7 @@
 # Enable WebRTC type support in Media Capabilities API.
 - name: media.mediacapabilities.webrtc.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: true
   mirror: always
 
 # Comma-separated hostnames (with optional `*.` wildcard prefix). Hosts in
@@ -13537,6 +13565,11 @@
   mirror: always
 
 - name: media.navigator.audio.use_fec
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+- name: media.navigator.audio.use_transport_cc
   type: RelaxedAtomicBool
   value: true
   mirror: always
@@ -15603,6 +15636,15 @@
   value: true
   mirror: always
 
+# If true, hosts matching the OS-provided DNS suffix list are excluded from
+# TRR even when in TRR-only mode (mode 3). When false (default), the DNS
+# suffix list is ignored in TRR-only mode so those names are still resolved
+# via TRR.
+- name: network.trr.exclude_dns_suffix_in_mode_trronly
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
 # Explicitly disable ECS (EDNS Client Subnet, RFC 7871)
 - name: network.trr.disable-ECS
   type: RelaxedAtomicBool
@@ -16398,6 +16440,16 @@
 - name: network.trr.add_additional_records
   type: RelaxedAtomicBool
   value: true
+  mirror: always
+
+# When true, the HTTP cache uses the No-Vary-Search response header to match
+# URL variants against existing cache entries, implementing the "equivalent
+# modulo variation config" algorithm from the No-Vary-Search spec
+# (https://httpwg.org/http-extensions/draft-ietf-httpbis-no-vary-search.html).
+# Can be set to false to disable the feature if regressions are observed.
+- name: network.cache.no_vary_search
+  type: RelaxedAtomicBool
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
 
 # When this pref is true, AddStorageEntry will return an error if the
@@ -17270,8 +17322,18 @@
   value: ""
   mirror: never
 
-# Comma-separated names of remote settings lists to use for content blocking.
-- name: privacy.trackingprotection.content.protection.list_names
+# Comma-separated content classifier feature names whose engines are used
+# for blocking in non-private browsing contexts.
+# Defined feature names are in ContentClassifierService.cpp, kFeatures.
+- name: privacy.trackingprotection.content.protection.engines
+  type: String
+  value: "test_block"
+  mirror: never
+
+# Comma-separated content classifier feature names whose engines are used
+# for blocking in private browsing contexts.
+# Defined feature names are in ContentClassifierService.cpp, kFeatures.
+- name: privacy.trackingprotection.content.protection.engines.pbmode
   type: String
   value: ""
   mirror: never
@@ -17290,8 +17352,18 @@
   value: ""
   mirror: never
 
-# Comma-separated names of remote settings lists to use for content annotation.
-- name: privacy.trackingprotection.content.annotation.list_names
+# Comma-separated content classifier feature names whose engines are used
+# for annotation in non-private browsing contexts.
+# Defined feature names are in ContentClassifierService.cpp, kFeatures.
+- name: privacy.trackingprotection.content.annotation.engines
+  type: String
+  value: "test_annotate"
+  mirror: never
+
+# Comma-separated content classifier feature names whose engines are used
+# for annotation in private browsing contexts.
+# Defined feature names are in ContentClassifierService.cpp, kFeatures.
+- name: privacy.trackingprotection.content.annotation.engines.pbmode
   type: String
   value: ""
   mirror: never
@@ -18407,7 +18479,7 @@
 # processing is enabled.
 - name: security.qwacs.enabled
   type: bool
-  value: false
+  value: @IS_NOT_ANDROID@
   mirror: always
 
 # Whether or not to enable the test trust anchor list when verifying QWACs.

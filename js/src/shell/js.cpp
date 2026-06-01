@@ -7442,11 +7442,6 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
         ReportAccessDenied(cx);
         return false;
       }
-      if (!js::IsWindowProxy(existingWindowProxy)) {
-        JS_ReportErrorASCII(
-            cx, "transplantWindowProxy: argument is not a WindowProxy");
-        return false;
-      }
       kind = ShellGlobalKind::WindowProxy;
     }
 
@@ -7535,6 +7530,14 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
       }
       behaviors.setLocaleOverride(locale.get());
     }
+  }
+
+  // Ensure existingWindowProxy is a WindowProxy. This must be checked after
+  // operations that can run JS and transplant the WindowProxy.
+  if (existingWindowProxy && !js::IsWindowProxy(existingWindowProxy)) {
+    JS_ReportErrorASCII(cx,
+                        "transplantWindowProxy: argument is not a WindowProxy");
+    return false;
   }
 
   if (!CheckRealmOptions(cx, options, principals.get())) {
@@ -9074,6 +9077,10 @@ class TransplantableProxyHandler final : public ForwardingProxyHandler {
   }
 
   bool mayBeSwapped() const override { return true; }
+
+  // For testing purposes allow these to be allocated in the nursery. This
+  // doesn't (currently) happen in the browser.
+  bool canNurseryAllocate() const override { return true; }
 
   static JSObject* GetAndClearExpandoObject(
       JSObject* obj, JS::MutableHandle<JS::Value> restoreToken) {
@@ -11696,6 +11703,13 @@ static JSObject* NewGlobalObject(JSContext* cx, JS::RealmOptions& options,
     return nullptr;
   }
 
+  if (existingWindowProxy &&
+      JS::GetCompartment(existingWindowProxy) != JS::GetCompartment(glob) &&
+      !AllowNewWrapper(JS::GetCompartment(existingWindowProxy), glob)) {
+    JS_ReportErrorASCII(cx, "Cannot transplant into nuked compartment");
+    return nullptr;
+  }
+
   {
     JSAutoRealm ar(cx, glob);
 
@@ -13225,12 +13239,11 @@ bool InitOptionParser(OptionParser& op) {
       !op.addBoolOption('\0', "enable-import-text", "Enable import text") ||
       !op.addBoolOption('\0', "enable-promise-allkeyed",
                         "Enable Promise.allKeyed") ||
-#ifdef NIGHTLY_BUILD
       !op.addBoolOption(
           '\0', "enable-promise-safe-resolve",
           "Enable thenable-curtailment's safe-resolve second parameter on "
           "Promise resolve functions") ||
-#endif  // NIGHTLY_BUILD
+
       !op.addBoolOption('\0', "enable-arraybuffer-immutable",
                         "Enable immutable ArrayBuffers") ||
       !op.addBoolOption('\0', "enable-iterator-chunking",
@@ -13314,6 +13327,12 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
   if (op.getBoolOption("enable-legacy-regexp")) {
     JS::Prefs::set_experimental_legacy_regexp(true);
   }
+  if (op.getBoolOption("enable-import-text")) {
+    JS::Prefs::set_experimental_import_text(true);
+  }
+  if (op.getBoolOption("enable-intl-locale-info")) {
+    JS::Prefs::setAtStartup_experimental_intl_locale_info(true);
+  }
 #ifdef NIGHTLY_BUILD
   if (op.getBoolOption("enable-async-iterator-helpers")) {
     JS::Prefs::setAtStartup_experimental_async_iterator_helpers(true);
@@ -13329,9 +13348,6 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
   }
   if (op.getBoolOption("enable-import-bytes")) {
     JS::Prefs::setAtStartup_experimental_import_bytes(true);
-  }
-  if (op.getBoolOption("enable-import-text")) {
-    JS::Prefs::set_experimental_import_text(true);
   }
   if (op.getBoolOption("enable-promise-allkeyed")) {
     JS::Prefs::setAtStartup_experimental_promise_allkeyed(true);
@@ -13352,9 +13368,6 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
   }
   if (op.getBoolOption("enable-error-stack-trace-limit")) {
     JS::Prefs::setAtStartup_experimental_error_stack_trace_limit(true);
-  }
-  if (op.getBoolOption("enable-intl-locale-info")) {
-    JS::Prefs::setAtStartup_experimental_intl_locale_info(true);
   }
   if (op.getBoolOption("enable-wasm-esm-integration")) {
     JS::Prefs::set_experimental_wasm_esm_integration(true);

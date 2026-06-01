@@ -13,6 +13,7 @@ use crate::font_metrics::{FontMetrics, FontMetricsOrientation};
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::structs::GeckoFontMetrics;
 use crate::parser::{Parse, ParserContext};
+use crate::typed_om::{NumericValue, ToTyped, TypedValue, UnitValue};
 use crate::values::computed::{self, CSSPixelLength, Context, FontSize};
 use crate::values::generics::length as generics;
 use crate::values::generics::length::{
@@ -35,8 +36,7 @@ use std::cmp;
 use std::fmt::{self, Write};
 use style_traits::values::specified::AllowedNumericType;
 use style_traits::{
-    CssString, CssWriter, NumericValue, ParseError, ParsingMode, SpecifiedValueInfo,
-    StyleParseErrorKind, ToCss, ToTyped, TypedValue, UnitValue,
+    CssString, CssWriter, ParseError, ParsingMode, SpecifiedValueInfo, StyleParseErrorKind, ToCss,
 };
 use thin_vec::ThinVec;
 
@@ -741,6 +741,10 @@ impl NoCalcLength {
             );
             metrics.ic_width_or_default(reference_font_size.used_size())
         }
+
+        context
+            .builder
+            .add_flags(ComputedValueFlags::USES_FONT_RELATIVE_UNITS);
 
         let reference_font_size = base_size.resolve(context);
         let length = self.value;
@@ -1536,6 +1540,21 @@ impl LengthPercentage {
             allow_quirks,
             AllowAnchorPositioningFunctions::No,
         )
+    }
+
+    /// Computes this specified value without style context. This fails for calc and non-px units.
+    pub fn compute_without_context(&self) -> Option<computed::LengthPercentage> {
+        use crate::values::normalize;
+        match self {
+            Self::Length(ref length) => length
+                .to_computed_pixel_length_without_context()
+                .map(|v| computed::LengthPercentage::new_length(computed::Length::new(v)))
+                .ok(),
+            Self::Percentage(ref pc) => Some(computed::LengthPercentage::new_percent(
+                computed::Percentage(normalize(pc.get())),
+            )),
+            _ => None,
+        }
     }
 }
 

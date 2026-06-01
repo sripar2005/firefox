@@ -87,6 +87,7 @@ import org.mozilla.fenix.components.menu.middleware.MenuNavigationMiddleware
 import org.mozilla.fenix.components.menu.middleware.MenuTelemetryMiddleware
 import org.mozilla.fenix.components.menu.store.BrowserMenuState
 import org.mozilla.fenix.components.menu.store.ExtensionMenuState
+import org.mozilla.fenix.components.menu.store.IPProtectionMenuStatus
 import org.mozilla.fenix.components.menu.store.MenuAction
 import org.mozilla.fenix.components.menu.store.MenuState
 import org.mozilla.fenix.components.menu.store.MenuStore
@@ -164,7 +165,6 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
             ),
             engine = requireComponents.core.engine,
             settings = requireComponents.settings,
-            coroutineContext = lifecycleScope.coroutineContext,
         )
     }
 
@@ -765,7 +765,11 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                         }
                                     },
                                     onIPProtectionClick = {
-                                        components.ipProtection.store.dispatch(IPProtectionAction.Toggle)
+                                        if (ipProtectionMenuState.status == IPProtectionMenuStatus.AuthRequired) {
+                                            store.dispatch(MenuAction.Navigate.IPProtectionSettings)
+                                        } else {
+                                            components.ipProtection.store.dispatch(IPProtectionAction.Toggle)
+                                        }
                                     },
                                     onIPProtectionNavigate = {
                                         store.dispatch(MenuAction.Navigate.IPProtectionSettings)

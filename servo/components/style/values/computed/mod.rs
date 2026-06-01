@@ -66,6 +66,7 @@ pub use self::color::{
     Color, ColorOrAuto, ColorPropertyValue, ColorScheme, ForcedColorAdjust, PrintColorAdjust,
 };
 pub use self::column::ColumnCount;
+pub use self::corner_shape::{CornerShape, CornerShapeRect};
 pub use self::counters::{Content, ContentItem, CounterIncrement, CounterReset, CounterSet};
 pub use self::easing::TimingFunction;
 pub use self::effects::{BoxShadow, Filter, SimpleShadow};
@@ -139,8 +140,10 @@ pub mod basic_shape;
 pub mod border;
 #[path = "box.rs"]
 pub mod box_;
+pub mod calc;
 pub mod color;
 pub mod column;
+pub mod corner_shape;
 pub mod counters;
 pub mod easing;
 pub mod effects;

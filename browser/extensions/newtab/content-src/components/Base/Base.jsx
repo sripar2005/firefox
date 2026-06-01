@@ -130,6 +130,9 @@ export class BaseContent extends React.PureComponent {
     this.toggleWidgetsManagementPanel =
       this.toggleWidgetsManagementPanel.bind(this);
     this.openWidgetsPanel = this.openWidgetsPanel.bind(this);
+    this.attachSearchSentinel = this.attachSearchSentinel.bind(this);
+    this.onSearchSentinelIntersect = this.onSearchSentinelIntersect.bind(this);
+    this.searchStickyObserver = null;
     this.state = {
       fixedSearch: false,
       colorMode: "",
@@ -141,6 +144,30 @@ export class BaseContent extends React.PureComponent {
       showWidgetsManagementPanel: false,
     };
     this.spocPlaceholderStartTime = null;
+  }
+
+  attachSearchSentinel(el) {
+    if (this.searchStickyObserver) {
+      this.searchStickyObserver.disconnect();
+      this.searchStickyObserver = null;
+    }
+    if (el) {
+      this.searchStickyObserver = new IntersectionObserver(
+        this.onSearchSentinelIntersect,
+        { threshold: 0 }
+      );
+      this.searchStickyObserver.observe(el);
+    } else if (this.state.fixedSearch) {
+      this.setState({ fixedSearch: false });
+    }
+  }
+
+  onSearchSentinelIntersect(entries) {
+    const entry = entries[entries.length - 1];
+    const stuck = !entry.isIntersecting && entry.boundingClientRect.top < 0;
+    if (stuck !== this.state.fixedSearch) {
+      this.setState({ fixedSearch: stuck });
+    }
   }
 
   onVisible() {
@@ -422,9 +449,19 @@ export class BaseContent extends React.PureComponent {
     if (this._onHashChange) {
       globalThis.removeEventListener("hashchange", this._onHashChange);
     }
+    if (this.searchStickyObserver) {
+      this.searchStickyObserver.disconnect();
+      this.searchStickyObserver = null;
+    }
   }
 
   onWindowScroll() {
+    if (this.props.Prefs.values[PREF_NOVA_ENABLED]) {
+      // Nova restores sticky search via IntersectionObserver
+      // (attachSearchSentinel); the scroll-based fixed-search math below
+      // is classic-only.
+      return;
+    }
     if (window.innerHeight <= 700) {
       // Bug 1937296: Only apply fixed-search logic
       // if the page is tall enough to support it.
@@ -855,10 +892,6 @@ export class BaseContent extends React.PureComponent {
       nimbusClocksEnabled ||
       nimbusClocksTrainhopEnabled;
 
-    const mayHaveWeatherWidget =
-      prefs["widgets.system.weather.enabled"] ||
-      prefs.trainhopConfig?.widgets?.weatherEnabled;
-
     const nimbusSportsWidgetEnabled = prefs.widgetsConfig?.sportsWidgetEnabled;
     const nimbusSportsWidgetTrainhopEnabled =
       prefs.trainhopConfig?.widgets?.sportsWidgetEnabled;
@@ -984,33 +1017,34 @@ export class BaseContent extends React.PureComponent {
       const weatherGoesToSidebar =
         resolveWidgetHasSidebar(weatherWidget, prefs) &&
         resolveWidgetSize(weatherWidget, prefs) === "small";
-      const hasContentWidgets =
-        (mayHaveListsWidget && enabledWidgets.listsEnabled) ||
-        (mayHaveTimerWidget && enabledWidgets.timerEnabled) ||
-        (mayHaveClocksWidget && enabledWidgets.clocksEnabled) ||
-        (mayHaveWeatherWidget &&
-          enabledWidgets.weatherEnabled &&
-          !weatherGoesToSidebar) ||
-        (mayHaveSportsWidget && enabledWidgets.sportsWidgetEnabled);
       const widgetsEnabled = prefs["widgets.enabled"];
       const hasAnyEnabledWidget = WIDGET_REGISTRY.some(w =>
         isWidgetEnabled(w, prefs, widgetsEnabled)
+      );
+      const hasContentWidgets = WIDGET_REGISTRY.some(
+        w =>
+          isWidgetEnabled(w, prefs, widgetsEnabled) &&
+          !(w.id === "weather" && weatherGoesToSidebar)
       );
       const highlightsEnabled = prefs["feeds.section.highlights"];
       const noContentSectionsEnabled =
         !topSitesEnabled && !pocketEnabled && !highlightsEnabled;
       const isPageEmpty =
         noContentSectionsEnabled && !prefs.showSearch && !hasAnyEnabledWidget;
-      const logoShouldBeCentered = !pocketEnabled && !hasContentWidgets;
+      const hasManyTopSitesRows = topSitesEnabled && prefs.topSitesRows > 2;
+      const logoShouldBeCentered =
+        !pocketEnabled && !hasContentWidgets && !hasManyTopSitesRows;
 
       return (
         <BaseContext.Provider value={baseContextValue}>
-          <div className="nova-outer-wrapper">
+          <div
+            className={`nova-outer-wrapper${this.state.fixedSearch ? " stuck-search" : ""}`}
+          >
             <div
               className={`container nova-enabled${logoShouldBeCentered ? " logo-in-content" : ""}`}
             >
               <aside className="sidebar-inline-start">
-                {!logoShouldBeCentered && !isPageEmpty && (
+                {!prefs.hideLogo && !logoShouldBeCentered && !isPageEmpty && (
                   <ErrorBoundary>
                     <Logo />
                   </ErrorBoundary>
@@ -1027,7 +1061,7 @@ export class BaseContent extends React.PureComponent {
                 )}
               </aside>
               <main className="content">
-                {logoShouldBeCentered && !isPageEmpty && (
+                {!prefs.hideLogo && logoShouldBeCentered && !isPageEmpty && (
                   <ErrorBoundary>
                     <Logo />
                   </ErrorBoundary>
@@ -1035,9 +1069,16 @@ export class BaseContent extends React.PureComponent {
 
                 {/* Search */}
                 {prefs.showSearch && (
-                  <ErrorBoundary>
-                    <Search showLogo={false} {...props.Search} />
-                  </ErrorBoundary>
+                  <>
+                    <div
+                      ref={this.attachSearchSentinel}
+                      className="sticky-search-sentinel"
+                      aria-hidden="true"
+                    />
+                    <ErrorBoundary>
+                      <Search showLogo={false} {...props.Search} />
+                    </ErrorBoundary>
+                  </>
                 )}
 
                 {/* ASRouterNewTabMessage (ASROUTER_NEWTAB_MESSAGE_POSITIONS.ABOVE_TOPSITES) */}
@@ -1163,10 +1204,14 @@ export class BaseContent extends React.PureComponent {
                 widgetsEnabled={prefs["widgets.enabled"]}
                 dispatch={this.props.dispatch}
               />
-              {shouldShowOMCHighlight(
+              {(shouldShowOMCHighlight(
                 this.props.Messages,
                 "CustomWallpaperHighlight"
-              ) && (
+              ) ||
+                shouldShowOMCHighlight(
+                  this.props.Messages,
+                  "WorldCupWallpaperHighlight"
+                )) && (
                 <MessageWrapper dispatch={this.props.dispatch}>
                   <WallpaperFeatureHighlight
                     position="inset-block-start inset-inline-start"

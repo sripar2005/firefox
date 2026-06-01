@@ -45,6 +45,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.collectionItemInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -53,7 +54,6 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.modifier.thenConditional
-import mozilla.components.compose.base.theme.surfaceDimVariant
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.menu.MenuDialogTestTag.WEB_EXTENSION_ITEM
 import org.mozilla.fenix.compose.list.IconListItem
@@ -141,17 +141,23 @@ internal fun MenuItem(
                 if (!enabled) {
                     disabled()
                 }
+                if (onClick != null && enabled) {
+                    onClick {
+                        onClick()
+                        true
+                    }
+                }
             }
             .wrapContentSize()
             .clip(shape = MaterialTheme.shapes.extraSmall)
             .background(
-                color = MaterialTheme.colorScheme.surfaceDimVariant,
+                color = MaterialTheme.colorScheme.surfaceBright,
             ),
         labelModifier = labelModifier,
         colors = ListItemDefaults.colors(
             headlineColor = labelTextColor,
             supportingColor = descriptionTextColor,
-            ),
+        ),
         maxLabelLines = 2,
         description = description,
         maxDescriptionLines = maxDescriptionLines,
@@ -204,7 +210,7 @@ internal fun MenuTextItem(
         modifier = modifier
             .clip(shape = MaterialTheme.shapes.extraSmall)
             .background(
-                color = MaterialTheme.colorScheme.surfaceDimVariant,
+                color = MaterialTheme.colorScheme.surfaceBright,
             ),
         iconPainter = iconPainter,
         onClick = onClick,
@@ -258,7 +264,7 @@ internal fun WebExtensionMenuItem(
             .wrapContentSize()
             .clip(shape = MaterialTheme.shapes.extraSmall)
             .background(
-                color = MaterialTheme.colorScheme.surfaceDimVariant,
+                color = MaterialTheme.colorScheme.surfaceBright,
             ),
         afterListAction = {
             Row(
@@ -322,7 +328,7 @@ internal fun MenuBadgeItem(
             .semantics { disabled() }
             .clip(shape = MaterialTheme.shapes.extraSmall)
             .background(
-                color = MaterialTheme.colorScheme.surfaceDimVariant,
+                color = MaterialTheme.colorScheme.surfaceBright,
             )
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -480,8 +486,8 @@ private fun getIconTint(state: MenuItemState): Color {
 @Composable
 private fun getBadgeColor(state: MenuItemState): Color {
     return when (state) {
-        MenuItemState.ACTIVE -> MaterialTheme.colorScheme.primaryContainer
-        else -> MaterialTheme.colorScheme.surfaceContainerHighest
+        MenuItemState.ACTIVE -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
 }
 

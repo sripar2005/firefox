@@ -2047,7 +2047,7 @@ arena_bin_t::arena_bin_t(SizeClass aSizeClass) : mSizeClass(aSizeClass.Size()) {
 
   MOZ_ASSERT(aSizeClass.Size() <= gMaxBinClass);
 
-  try_run_size = gPageSize;
+  try_run_size = gMinimumRunSize;
 
   // Run size expansion loop.
   while (true) {
@@ -3733,6 +3733,7 @@ inline void MozJemalloc::jemalloc_stats_internal(
   aStats->page_size = gPageSize;
   aStats->real_page_size = gRealPageSize;
   aStats->dirty_max = opt_dirty_max;
+  aStats->arena_run_header = offsetof(arena_run_t, mRegionsMask);
 
   // Gather current memory usage statistics.
   aStats->narenas = 0;

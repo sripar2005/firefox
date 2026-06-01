@@ -23,6 +23,8 @@
   <string name="content_description_normal_browsing">Κανονική περιήγηση</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Αναζήτηση όρου ή εισαγωγή διεύθυνσης</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Αναζήτηση</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Αναζήτηση στο διαδίκτυο</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -464,6 +466,8 @@
   <string name="search_suggestions_delete_history_item_snackbar">Το %1$s διαγράφηκε από το ιστορικό</string>
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">Διαγραφή καταχώρησης ιστορικού</string>
+  <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="applinks_prompt_negative_button">Παραμονή στο %1$s</string>
   <!--
     Home onboarding
 
@@ -1643,6 +1647,8 @@
   <string name="tab_manager_search_bar_placeholder">Αναζήτηση καρτελών</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Πρόσφατα κλεισμένες καρτέλες</string>
+  <!-- Text shown in the menu to select all tabs. -->
+  <string name="tab_tray_menu_select_all_tabs">Επιλογή όλων</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Ρυθμίσεις λογαριασμού</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -1711,6 +1717,8 @@
   <string name="tab_group_onboarding_grid_item_description">Σύρετε μια καρτέλα πάνω σε μια άλλη για να τις ομαδοποιήσετε.</string>
   <!-- Description for tab groups onboarding shown in the tab manager when in list view. -->
   <string name="tab_group_onboarding_list_item_description">Επιλέξτε πολλαπλές καρτέλες για να δημιουργήσετε μια ομάδα.</string>
+  <!-- Content description (accessibility label) for button to dismiss the tab group onboarding item. -->
+  <string name="tab_group_onboarding_item_dismiss_content_description">Απόρριψη παρουσίασης ομάδας καρτελών</string>
   <!-- The header text displayed on the tab groups page when no tab groups are open -->
   <string name="tab_manager_empty_tab_groups_page_header">Δοκιμάστε τις ομάδες καρτελών για λιγότερη κύλιση και περισσότερες εργασίες</string>
   <!-- The description displayed on the tab groups page when no tab groups are open -->
@@ -2504,7 +2512,7 @@
   <!-- A message template for the shared link with a footer. %1$s is the shared link, %2$s is the app name (e.g. Firefox) and %3$s is a download link for the app. -->
   <string name="sent_from_firefox_template" tools:ignore="UnusedResources">%1$s\n\nΑπεστάλη από το %2$s 🦊 Δοκιμάστε το: %3$s</string>
   <!-- A short message template for the shared link with a footer. %1$s is the shared link, %2$s is the app name (e.g. Firefox) and %3$s is a download link for the app. -->
-  <string name="sent_from_firefox_template_short" tools:ignore="UnusedResources">%1$s\n\nΑπεστέλη από το %2$s 🦊 %3$s</string>
+  <string name="sent_from_firefox_template_short" tools:ignore="UnusedResources">%1$s\n\nΑπεστάλη από το %2$s 🦊 %3$s</string>
   <!--
     Notifications
 
@@ -2693,6 +2701,15 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">Το %s σάς προστατεύει από τους περισσότερους, συνηθισμένους ιχνηλάτες που καταγράφουν ό,τι κάνετε στο διαδίκτυο.</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Μάθετε περισσότερα</string>
+  <plurals name="trackers_blocked_count_2">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d αποκλεισμένος ιχνηλάτης</item>
+    <item quantity="other">%d αποκλεισμένοι ιχνηλάτες</item>
+  </plurals>
   <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
@@ -2830,6 +2847,8 @@
   <string name="etp_suspected_fingerprinters_description">Ενεργοποιεί την προστασία από fingerprinting για την αποτροπή των πιθανών fingerprinter.</string>
   <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_known_fingerprinters_title">Γνωστά fingerprinter</string>
+  <!-- Label for the fingerprinters category shown in the tracking protections dashboard breakdown -->
+  <string name="tracking_dashboard_fingerprinters_category_name">Fingerprinter</string>
   <!--
     Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
     as we use it on the UI to indicate which trackers have been partially unblocked.
@@ -3084,6 +3103,8 @@
   <string name="saved_logins_sort_strategy_last_used">Τελευταία χρήση</string>
   <!-- Content description (not visible, for screen readers etc.) -->
   <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">Μενού ταξινόμησης κωδικών πρόσβασης</string>
+  <!-- Label for button to import passwords from file. -->
+  <string name="passwords_import_menu_button">Εισαγωγή από αρχείο</string>
   <!--
     Email Masks
 
@@ -4447,11 +4468,11 @@
   <!-- Label shown on the sports widget scoreboard when a match is currently being played live. -->
   <string name="sports_widget_match_live">ΖΩΝΤΑΝΑ</string>
   <!-- Title shown on the sports widget champion scoreboard row celebrating the soccer tournament winner. -->
-  <string name="sports_widget_champions_title" tools:ignore="UnusedResources">Πρωταθλητές Παγκοσμίου Κυπέλλου 2026</string>
+  <string name="sports_widget_champions_title">Πρωταθλητές Παγκοσμίου Κυπέλλου 2026</string>
   <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament runners-up. Runners-up means second place. -->
   <string name="sports_widget_runner_up_title" tools:ignore="UnusedResources">Φιναλίστ</string>
   <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament third place winners. -->
-  <string name="sports_widget_third_place_title" tools:ignore="UnusedResources">Τρίτη θέση</string>
+  <string name="sports_widget_third_place_title">Τρίτη θέση</string>
   <!-- Round name shown on the sports widget for the Round of 32 stage in the soccer tournament. -->
   <string name="sports_widget_round_of_32">Φάση των 32</string>
   <!-- Round name shown on the sports widget for the Round of 16 stage in the soccer tournament. -->
@@ -4577,6 +4598,13 @@
   -->
   <string name="sports_widget_upcoming_match_content_description">Επερχόμενος: %1$s εναντίον %2$s, %3$s στις %4$s</string>
   <!--
+    Content description (for accessibility, not displayed) announcing a soccer match.
+    %1$s is the home team name, %2$s is the away team name, %3$s is trailing context
+    (e.g. formatted score "1 - 2 (Full time)", upcoming match info "Jun 19 5:00 PM",
+    or a match status like "Full time").
+  -->
+  <string name="sports_widget_match_content_description">%1$s εναντίον %2$s, %3$s</string>
+  <!--
     Content description (for accessibility, not displayed)  used for the sports widget card header announcing a live match for a group or stage.
     %s is the soccer tournament group name or stage (e.g. Group A represented by sports_widget_group_a, Round of 32 represented by sports_widget_round_of_32,
     or Final represented by sports_widget_final).
@@ -4589,6 +4617,11 @@
   -->
   <string name="sports_widget_live_score_content_description">%1$s %2$d, %3$s %4$d, %5$s, ζωντανά</string>
   <!--
+    Content description (for accessibility, not displayed) announcing the elapsed minutes of a live match.
+    %1$s is the clock value, which may be a plain number (e.g. "72") or include extra time (e.g. "90+3").
+  -->
+  <string name="sports_widget_match_elapsed_minutes">Χρόνος που έχει παρέλθει (λεπτά): %1$s</string>
+  <!--
     Content description (for accessibility, not displayed) for a paginated item.
     %1$s is the soccer tournament group name or stage (e.g. Group A represented by sports_widget_group_a, Round of 32 represented by sports_widget_round_of_32),
     %2$d is the current page number, and %3$d is the total number of pages.
@@ -4599,6 +4632,8 @@
     %1$d is the current page number, and %2$d is the total number of pages.
   -->
   <string name="sports_widget_final_results_page_content_description" tools:ignore="UnusedResources">Τελικά αποτελέσματα Παγκοσμίου Κυπέλλου, σελίδα %1$d από %2$d</string>
+  <!-- Content description (for accessibility, not displayed) for the World Cup final results page. -->
+  <string name="sports_widget_final_results_content_description">Τελικά αποτελέσματα Παγκοσμίου Κυπέλλου</string>
   <!-- Content description (for accessibility, not displayed) for the remove button that removes the sports widget from the homepage. -->
   <string name="sports_widget_remove_content_description" tools:ignore="UnusedResources">Αφαίρεση του Παγκοσμίου Κυπέλλου από την αρχική</string>
   <!-- Title shown on the sports widget immediately after the user has followed a team. %s is the selected team (e.g., "USA"). -->
@@ -4615,6 +4650,12 @@
   <string name="sports_widget_error_connection_offline_description">Ελέγξτε τη σύνδεσή σας στο διαδίκτυο και δοκιμάστε ξανά.</string>
   <!-- Sports widget general group stage label in the soccer tournament. -->
   <string name="sports_widget_group_stage">Φάση ομίλου</string>
+  <!-- Sports widget error card title shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_title">Οι πληροφορίες αγώνα δεν είναι διαθέσιμες αυτήν τη στιγμή.</string>
+  <!-- Sports widget error card description shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_description">Δοκιμάστε να κάνετε ανανέωση σε λίγα λεπτά.</string>
+  <!-- Content description (for accessibility, not displayed) for teams which have not yet been determined in the match schedule. -->
+  <string name="sports_widget_team_to_be_determined">Η ομάδα θα καθοριστεί</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->
 
   <!--
@@ -4629,4 +4670,14 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">Σημείωση απορρήτου</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Μάθετε περισσότερα</string>
+  <!-- Button text on the Firefox Labs screen for restoring all toggles back to the default settings. The button will turn off any experimental features. -->
+  <string name="firefox_labs_restore_default_button_text">Επαναφορά προεπιλογών</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
+  <string name="firefox_labs_feature_dialog_title">Απαιτείται επανεκκίνηση</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->
+  <string name="firefox_labs_dialog_restart_button">Επανεκκίνηση</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->
+  <string name="firefox_labs_dialog_cancel_button">Ακύρωση</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. -->
+  <string name="firefox_labs_restore_defaults_dialog_title">Απαιτείται επανεκκίνηση</string>
 </resources>

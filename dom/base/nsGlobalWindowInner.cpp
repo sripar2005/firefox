@@ -59,6 +59,7 @@
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/FlushType.h"
+#include "mozilla/HTMLEditor.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Logging.h"
 #include "mozilla/LookAndFeel.h"
@@ -83,6 +84,7 @@
 #include "mozilla/StorageAccess.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/TelemetryHistogramEnums.h"
+#include "mozilla/TextControlElement.h"
 #include "mozilla/ThrottledEventQueue.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
@@ -224,6 +226,7 @@
 #include "nsDocShell.h"
 #include "nsFocusManager.h"
 #include "nsFrameMessageManager.h"
+#include "nsFrameSelection.h"
 #include "nsGkAtoms.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsHashKeys.h"
@@ -420,8 +423,8 @@ static LazyLogModule gDocShellAndDOMWindowLeakLogging(
 
 static FILE* gDumpFile = nullptr;
 
-nsGlobalWindowInner::InnerWindowByIdTable*
-    nsGlobalWindowInner::sInnerWindowsById = nullptr;
+mozilla::StaticAutoPtr<nsGlobalWindowInner::InnerWindowByIdTable>
+    nsGlobalWindowInner::sInnerWindowsById;
 
 bool nsGlobalWindowInner::sDragServiceDisabled = false;
 bool nsGlobalWindowInner::sMouseDown = false;
@@ -521,7 +524,8 @@ class IdleRequestExecutor final : public nsIRunnable,
     MOZ_DIAGNOSTIC_ASSERT(mWindow);
 
     mIdlePeriodLimit = {mDeadline, mWindow->LastIdleRequestHandle()};
-    mDelayedExecutorDispatcher = new IdleRequestExecutorTimeoutHandler(this);
+    mDelayedExecutorDispatcher =
+        MakeRefPtr<IdleRequestExecutorTimeoutHandler>(this);
   }
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -696,7 +700,7 @@ void nsGlobalWindowInner::ScheduleIdleRequestDispatch() {
   AssertIsOnMainThread();
 
   if (!mIdleRequestExecutor) {
-    mIdleRequestExecutor = new IdleRequestExecutor(this);
+    mIdleRequestExecutor = MakeRefPtr<IdleRequestExecutor>(this);
   }
 
   mIdleRequestExecutor->MaybeDispatch();
@@ -815,12 +819,11 @@ uint32_t nsGlobalWindowInner::RequestIdleCallback(
 
   uint32_t handle = mIdleRequestCallbackCounter++;
 
-  RefPtr<IdleRequest> request = new IdleRequest(&aCallback, handle);
+  RefPtr request = MakeRefPtr<IdleRequest>(&aCallback, handle);
 
   if (aOptions.mTimeout.WasPassed()) {
     int32_t timeoutHandle;
-    RefPtr<TimeoutHandler> handler(
-        new IdleRequestTimeoutHandler(aCx, request, this));
+    RefPtr handler = MakeRefPtr<IdleRequestTimeoutHandler>(aCx, request, this);
 
     nsresult rv = mTimeoutManager->SetTimeout(
         handler, aOptions.mTimeout.Value(), false,
@@ -952,7 +955,7 @@ nsGlobalWindowInner::nsGlobalWindowInner(nsGlobalWindowOuter* aOuterWindow,
                                              ->GetBrowsingContextGroup()
                                              ->GetTimerEventQueue()));
 
-  mObserver = new nsGlobalWindowObserver(this);
+  mObserver = MakeRefPtr<nsGlobalWindowObserver>(this);
   if (nsCOMPtr<nsIObserverService> os = services::GetObserverService()) {
     // Watch for online/offline status changes so we can fire events. Use
     // a strong reference.
@@ -1145,7 +1148,6 @@ void nsGlobalWindowInner::ShutDown() {
   }
   gDumpFile = nullptr;
 
-  delete sInnerWindowsById;
   sInnerWindowsById = nullptr;
 }
 
@@ -2156,30 +2158,54 @@ EventTarget* nsGlobalWindowInner::GetTargetForDOMEvent() {
 }
 
 void nsGlobalWindowInner::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
-  EventMessage msg = aVisitor.mEvent->mMessage;
-
   aVisitor.mCanHandle = true;
   aVisitor.mForceContentDispatch = true;  // FIXME! Bug 329119
-  if (msg == eResize && aVisitor.mEvent->IsTrusted()) {
-    // Checking whether the event target is an inner window or not, so we can
-    // keep the old behavior also in case a child window is handling resize.
-    if (aVisitor.mEvent->mOriginalTarget &&
-        aVisitor.mEvent->mOriginalTarget->IsInnerWindow()) {
-      mIsHandlingResizeEvent = true;
-    }
-  } else if (msg == eMouseDown && aVisitor.mEvent->IsTrusted()) {
-    sMouseDown = true;
-  } else if ((msg == eMouseUp || msg == eDragEnd) &&
-             aVisitor.mEvent->IsTrusted()) {
-    sMouseDown = false;
-    if (sDragServiceDisabled) {
-      nsCOMPtr<nsIDragService> ds =
-          do_GetService("@mozilla.org/widget/dragservice;1");
-      if (ds) {
-        sDragServiceDisabled = false;
-        ds->Unsuppress();
+  switch (aVisitor.mEvent->mMessage) {
+    case eResize:
+      if (aVisitor.mEvent->IsTrusted()) {
+        // Checking whether the event target is an inner window or not, so we
+        // can keep the old behavior also in case a child window is handling
+        // resize.
+        if (aVisitor.mEvent->mOriginalTarget &&
+            aVisitor.mEvent->mOriginalTarget->IsInnerWindow()) {
+          mIsHandlingResizeEvent = true;
+        }
       }
-    }
+      break;
+    case eMouseDown:
+      if (aVisitor.mEvent->IsTrusted()) {
+        sMouseDown = true;
+      }
+      break;
+    case eMouseUp:
+    case eDragEnd:
+      if (aVisitor.mEvent->IsTrusted()) {
+        sMouseDown = false;
+        if (sDragServiceDisabled) {
+          nsCOMPtr<nsIDragService> ds =
+              do_GetService("@mozilla.org/widget/dragservice;1");
+          if (ds) {
+            sDragServiceDisabled = false;
+            ds->Unsuppress();
+          }
+        }
+      }
+      break;
+    case eFocus:
+    case eBlur:
+      // We need to handle eFocus and eBlur to set up selection. However, that
+      // needs to be done before dispatching the event to the DOM:
+      // https://w3c.github.io/uievents/#event-type-focus
+      // > The focus MUST be given to the element before the dispatch of this
+      // > event type.
+      // https://w3c.github.io/uievents/#event-type-blur
+      // > The focus MUST be taken from the element before the dispatch of this
+      // > event type.
+      // Therefore, we want the pre handler.
+      aVisitor.mWantsPreHandleEvent = aVisitor.mEvent->IsTrusted();
+      break;
+    default:
+      break;
   }
 
   aVisitor.SetParentTarget(GetParentTarget(), true);
@@ -2409,6 +2435,59 @@ void nsGlobalWindowInner::FireFrameLoadEvent() {
   }
 }
 
+nsresult nsGlobalWindowInner::PreHandleEvent(EventChainVisitor& aVisitor) {
+  MOZ_ASSERT(aVisitor.mEvent->mMessage == eFocus ||
+             aVisitor.mEvent->mMessage == eBlur);
+  MOZ_ASSERT(aVisitor.mEvent->IsTrusted());
+
+  if (!mDoc) [[unlikely]] {
+    return NS_OK;
+  }
+  const RefPtr<PresShell> presShell = mDoc->GetPresShell();
+  if (!presShell) [[unlikely]] {
+    return NS_OK;
+  }
+  // Maintain selection state before HTMLEditor and/or TextEditor handles
+  // focus/blur below.
+  const nsCOMPtr<nsINode> targetNode = nsINode::FromEventTargetOrNull(
+      aVisitor.mEvent->GetOriginalDOMEventTarget());
+  if (Document* const targetDocument = Document::FromNodeOrNull(targetNode)) {
+    if (aVisitor.mEvent->mMessage == eFocus) {
+      nsFrameSelection::WillFocusDocument(*presShell, *targetDocument);
+    } else {
+      nsFrameSelection::WillBlurDocument(*presShell, *targetDocument);
+    }
+  }
+  // If new focused element is a text control element in an editing host,
+  // both HTMLEditor and TextEditor need to handle the focus event for the
+  // backward compatibility. Then, we need to make HTMLEditor handle it
+  // first, then TextEditor will handle it below via
+  // TextControlElement::WillFocus().
+  if (aVisitor.mEvent->mMessage == eFocus) {
+    HTMLEditor::WillFocusNode(*presShell, targetNode);
+  }
+  // To keep the traditional behavior at blur, we should call
+  // HTMLEditor::OnBlur() before TextEditor::OnBlur() which is now called by
+  // TextControlElement::WillBlur() called below.
+  else {
+    HTMLEditor::WillBlurNode(*presShell, targetNode);
+  }
+
+  // Finally, set up selection of `TextEditor` if and only if the event target
+  // is a text control.
+  if (auto* const targetTextControlElement =
+          TextControlElement::FromNodeOrNull(targetNode)) {
+    if (targetTextControlElement->IsSingleLineTextControlOrTextArea()) {
+      if (aVisitor.mEvent->mMessage == eFocus) {
+        MOZ_KnownLive(targetTextControlElement)->WillFocus(*aVisitor.mEvent);
+      } else {
+        MOZ_KnownLive(targetTextControlElement)->WillBlur(*aVisitor.mEvent);
+      }
+    }
+  }
+  return NS_OK;
+}
+
 nsresult nsGlobalWindowInner::PostHandleEvent(EventChainPostVisitor& aVisitor) {
   // Return early if there is nothing to do.
   switch (aVisitor.mEvent->mMessage) {
@@ -2636,7 +2715,7 @@ WindowProxyHolder nsGlobalWindowInner::Window() {
 
 Navigation* nsPIDOMWindowInner::Navigation() {
   if (!mNavigation && Navigation::IsAPIEnabled()) {
-    mNavigation = new mozilla::dom::Navigation(this);
+    mNavigation = MakeRefPtr<mozilla::dom::Navigation>(this);
   }
 
   return mNavigation;
@@ -2644,7 +2723,7 @@ Navigation* nsPIDOMWindowInner::Navigation() {
 
 Navigator* nsPIDOMWindowInner::Navigator() {
   if (!mNavigator) {
-    mNavigator = new mozilla::dom::Navigator(this);
+    mNavigator = MakeRefPtr<mozilla::dom::Navigator>(this);
   }
 
   return mNavigator;
@@ -2656,7 +2735,7 @@ MediaDevices* nsPIDOMWindowInner::GetExtantMediaDevices() const {
 
 VisualViewport* nsGlobalWindowInner::VisualViewport() {
   if (!mVisualViewport) {
-    mVisualViewport = new mozilla::dom::VisualViewport(this);
+    mVisualViewport = MakeRefPtr<mozilla::dom::VisualViewport>(this);
   }
   return mVisualViewport;
 }
@@ -2670,14 +2749,14 @@ nsScreen* nsGlobalWindowInner::Screen() {
 
 nsHistory* nsGlobalWindowInner::GetHistory(ErrorResult& aError) {
   if (!mHistory) {
-    mHistory = new nsHistory(this);
+    mHistory = MakeRefPtr<nsHistory>(this);
   }
   return mHistory;
 }
 
 CustomElementRegistry* nsGlobalWindowInner::CustomElements() {
   if (!mCustomElements) {
-    mCustomElements = new CustomElementRegistry(this);
+    mCustomElements = MakeRefPtr<CustomElementRegistry>(this);
   }
 
   return mCustomElements;
@@ -3209,8 +3288,12 @@ void nsGlobalWindowInner::SetActiveLoadingState(bool aIsLoading) {
     (void)GetBrowsingContext()->SetLoading(aIsLoading);
   }
 
-  if (!nsGlobalWindowInner::Cast(this)->IsChromeWindow()) {
-    mTimeoutManager->SetLoading(aIsLoading);
+  if (StaticPrefs::dom_timeout_defer_during_load() && !IsChromeWindow()) {
+    nsIPrincipal* principal = GetPrincipal();
+    if (!principal || !principal->IsURIInPrefList(
+                          "dom.timeout.defer_during_load.force-disable")) {
+      mTimeoutManager->SetLoading(aIsLoading);
+    }
   }
 
   HintIsLoading(aIsLoading);
@@ -3232,7 +3315,7 @@ void nsGlobalWindowInner::HintIsLoading(bool aIsLoading) {
 #ifdef MOZ_WEBSPEECH
 SpeechSynthesis* nsGlobalWindowInner::GetSpeechSynthesis(ErrorResult& aError) {
   if (!mSpeechSynthesis) {
-    mSpeechSynthesis = new SpeechSynthesis(this);
+    mSpeechSynthesis = MakeRefPtr<SpeechSynthesis>(this);
   }
 
   return mSpeechSynthesis;
@@ -3250,7 +3333,7 @@ bool nsGlobalWindowInner::HasActiveSpeechSynthesis() {
 
 mozilla::glean::Glean* nsGlobalWindowInner::Glean() {
   if (!mGlean) {
-    mGlean = new mozilla::glean::Glean(this);
+    mGlean = MakeRefPtr<mozilla::glean::Glean>(this);
   }
 
   return mGlean;
@@ -3258,7 +3341,7 @@ mozilla::glean::Glean* nsGlobalWindowInner::Glean() {
 
 mozilla::glean::GleanPings* nsGlobalWindowInner::GleanPings() {
   if (!mGleanPings) {
-    mGleanPings = new mozilla::glean::GleanPings();
+    mGleanPings = MakeRefPtr<mozilla::glean::GleanPings>();
   }
 
   return mGleanPings;
@@ -3314,7 +3397,7 @@ void nsGlobalWindowInner::GetContent(JSContext* aCx,
 
 BarProp* nsGlobalWindowInner::GetMenubar(ErrorResult& aError) {
   if (!mMenubar) {
-    mMenubar = new MenubarProp(this);
+    mMenubar = MakeRefPtr<MenubarProp>(this);
   }
 
   return mMenubar;
@@ -3322,7 +3405,7 @@ BarProp* nsGlobalWindowInner::GetMenubar(ErrorResult& aError) {
 
 BarProp* nsGlobalWindowInner::GetToolbar(ErrorResult& aError) {
   if (!mToolbar) {
-    mToolbar = new ToolbarProp(this);
+    mToolbar = MakeRefPtr<ToolbarProp>(this);
   }
 
   return mToolbar;
@@ -3330,28 +3413,28 @@ BarProp* nsGlobalWindowInner::GetToolbar(ErrorResult& aError) {
 
 BarProp* nsGlobalWindowInner::GetLocationbar(ErrorResult& aError) {
   if (!mLocationbar) {
-    mLocationbar = new LocationbarProp(this);
+    mLocationbar = MakeRefPtr<LocationbarProp>(this);
   }
   return mLocationbar;
 }
 
 BarProp* nsGlobalWindowInner::GetPersonalbar(ErrorResult& aError) {
   if (!mPersonalbar) {
-    mPersonalbar = new PersonalbarProp(this);
+    mPersonalbar = MakeRefPtr<PersonalbarProp>(this);
   }
   return mPersonalbar;
 }
 
 BarProp* nsGlobalWindowInner::GetStatusbar(ErrorResult& aError) {
   if (!mStatusbar) {
-    mStatusbar = new StatusbarProp(this);
+    mStatusbar = MakeRefPtr<StatusbarProp>(this);
   }
   return mStatusbar;
 }
 
 BarProp* nsGlobalWindowInner::GetScrollbars(ErrorResult& aError) {
   if (!mScrollbars) {
-    mScrollbars = new ScrollbarsProp(this);
+    mScrollbars = MakeRefPtr<ScrollbarsProp>(this);
   }
 
   return mScrollbars;
@@ -3618,7 +3701,7 @@ bool nsGlobalWindowInner::DeviceSensorsEnabled(JSContext*, JSObject*) {
 
 Crypto* nsGlobalWindowInner::GetCrypto(ErrorResult& aError) {
   if (!mCrypto) {
-    mCrypto = new Crypto(this);
+    mCrypto = MakeRefPtr<Crypto>(this);
   }
   return mCrypto;
 }
@@ -4326,8 +4409,7 @@ bool nsGlobalWindowInner::IsInModalState() {
 }
 
 void nsGlobalWindowInner::NotifyWindowIDDestroyed(const char* aTopic) {
-  nsCOMPtr<nsIRunnable> runnable =
-      new WindowDestroyedEvent(this, mWindowID, aTopic);
+  RefPtr runnable = MakeRefPtr<WindowDestroyedEvent>(this, mWindowID, aTopic);
   Dispatch(runnable.forget());
 }
 
@@ -4393,7 +4475,7 @@ void nsGlobalWindowInner::ReportError(JSContext* aCx,
     return aRv.NoteJSContextException(aCx);
   }
 
-  RefPtr<xpc::ErrorReport> xpcReport = new xpc::ErrorReport();
+  RefPtr xpcReport = MakeRefPtr<xpc::ErrorReport>();
   bool isChrome = aCallerType == CallerType::System;
   xpcReport->Init(jsReport.report(), jsReport.toStringResult().c_str(),
                   isChrome, WindowID());
@@ -4459,7 +4541,7 @@ bool nsGlobalWindowInner::ComputeDefaultWantsUntrusted(ErrorResult& aRv) {
 EventListenerManager* nsGlobalWindowInner::GetOrCreateListenerManager() {
   if (!mListenerManager) {
     mListenerManager =
-        new EventListenerManager(static_cast<EventTarget*>(this));
+        MakeRefPtr<EventListenerManager>(static_cast<EventTarget*>(this));
   }
 
   return mListenerManager;
@@ -4472,7 +4554,8 @@ EventListenerManager* nsGlobalWindowInner::GetExistingListenerManager() const {
 mozilla::dom::DebuggerNotificationManager*
 nsGlobalWindowInner::GetOrCreateDebuggerNotificationManager() {
   if (!mDebuggerNotificationManager) {
-    mDebuggerNotificationManager = new DebuggerNotificationManager(this);
+    mDebuggerNotificationManager =
+        MakeRefPtr<DebuggerNotificationManager>(this);
   }
 
   return mDebuggerNotificationManager;
@@ -4489,7 +4572,7 @@ nsGlobalWindowInner::GetExistingDebuggerNotificationManager() {
 
 Location* nsGlobalWindowInner::Location() {
   if (!mLocation) {
-    mLocation = new dom::Location(this);
+    mLocation = MakeRefPtr<dom::Location>(this);
   }
 
   return mLocation;
@@ -4535,7 +4618,7 @@ void nsGlobalWindowInner::EnableVRUpdates() {
     MOZ_ASSERT(!IsDying(),
                "Creating a VREventObserver for an nsGlobalWindow that is "
                "dying would cause it to leak.");
-    mVREventObserver = new VREventObserver(this);
+    mVREventObserver = MakeRefPtr<VREventObserver>(this);
   }
   // If the content has an XR session, then we need to tell
   // VREventObserver that there is VR activity.
@@ -4732,8 +4815,8 @@ nsresult nsGlobalWindowInner::DispatchAsyncHashchange(nsIURI* aOldURI,
   NS_ConvertUTF8toUTF16 oldWideSpec(oldSpec);
   NS_ConvertUTF8toUTF16 newWideSpec(newSpec);
 
-  nsCOMPtr<nsIRunnable> callback =
-      new HashchangeCallback(oldWideSpec, newWideSpec, this);
+  RefPtr callback =
+      MakeRefPtr<HashchangeCallback>(oldWideSpec, newWideSpec, this);
   return Dispatch(callback.forget());
 }
 
@@ -4891,11 +4974,12 @@ Storage* nsGlobalWindowInner::GetSessionStorage(ErrorResult& aError) {
     // eDeny with a reason of STATE_COOKIES_BLOCKED_FOREIGN.
     //
     // 3. Tracking protection (BEHAVIOR_REJECT_TRACKER and
-    // BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) is in effect and
+    // BEHAVIOR_PARTITION_FOREIGN) is in effect and
     // IsThirdPartyTrackingResourceWindow() returned true and there wasn't a
     // permission that allows it. This will return ePartitionTrackersOrDeny with
     // a reason of STATE_COOKIES_BLOCKED_TRACKER or
     // STATE_COOKIES_BLOCKED_SOCIALTRACKER.
+    // TODO(Bug 2039931): case 3 is out of date.
     //
     // In the 1st case, the user has explicitly indicated that they don't want
     // to allow any storage to the origin or all origins and so we throw an
@@ -5091,7 +5175,7 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
 
     RefPtr<SessionStorageCache> cache;
     if (isolated) {
-      cache = new SessionStorageCache();
+      cache = MakeRefPtr<SessionStorageCache>();
     } else {
       // This will clone the session storage if it exists.
       rv = storageManager->GetSessionStorageCache(principal, storagePrincipal,
@@ -5102,8 +5186,8 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
       }
     }
 
-    mLocalStorage =
-        new PartitionedLocalStorage(this, principal, storagePrincipal, cache);
+    mLocalStorage = MakeRefPtr<PartitionedLocalStorage>(
+        this, principal, storagePrincipal, cache);
   }
 
   MOZ_ASSERT(mLocalStorage);
@@ -6470,7 +6554,7 @@ int32_t nsGlobalWindowInner::SetTimeoutOrInterval(
       return 0;
     }
 
-    RefPtr<TimeoutHandler> handler = new CallbackTimeoutHandler(
+    RefPtr handler = MakeRefPtr<CallbackTimeoutHandler>(
         aCx, this, &aHandler.GetAsFunction(), std::move(args));
 
     int32_t result;
@@ -6499,8 +6583,8 @@ int32_t nsGlobalWindowInner::SetTimeoutOrInterval(
   if (NS_WARN_IF(aError.Failed()) || !allowEval) {
     return 0;
   }
-  RefPtr<TimeoutHandler> handler =
-      new WindowScriptTimeoutHandler(aCx, this, *compliantString);
+  RefPtr handler =
+      MakeRefPtr<WindowScriptTimeoutHandler>(aCx, this, *compliantString);
   int32_t result;
   aError =
       mTimeoutManager->SetTimeout(handler, aTimeout, aIsInterval,
@@ -6730,8 +6814,7 @@ void nsGlobalWindowInner::NotifyDetectXRRuntimesCompleted() {
   // Connect to the VRManager in order to receive the runtime
   // detection results.
   mXRPermissionRequestInFlight = true;
-  RefPtr<XRPermissionRequest> request =
-      new XRPermissionRequest(this, WindowID());
+  RefPtr request = MakeRefPtr<XRPermissionRequest>(this, WindowID());
   (void)NS_WARN_IF(NS_FAILED(request->Start()));
 }
 
@@ -7377,8 +7460,8 @@ already_AddRefed<Promise> nsGlobalWindowInner::PromiseDocumentFlushed(
     return nullptr;
   }
 
-  UniquePtr<PromiseDocumentFlushedResolver> flushResolver(
-      new PromiseDocumentFlushedResolver(resultPromise, aCallback));
+  auto flushResolver =
+      MakeUnique<PromiseDocumentFlushedResolver>(resultPromise, aCallback);
 
   if (!presShell->NeedStyleFlush() && !presShell->NeedLayoutFlush()) {
     flushResolver->Call();
@@ -7544,7 +7627,8 @@ ChromeMessageBroadcaster* nsGlobalWindowInner::MessageManager() {
   if (!mChromeFields.mMessageManager) {
     RefPtr<ChromeMessageBroadcaster> globalMM =
         nsFrameMessageManager::GetGlobalMessageManager();
-    mChromeFields.mMessageManager = new ChromeMessageBroadcaster(globalMM);
+    mChromeFields.mMessageManager =
+        MakeRefPtr<ChromeMessageBroadcaster>(globalMM);
   }
   return mChromeFields.mMessageManager;
 }
@@ -7613,7 +7697,7 @@ bool nsGlobalWindowInner::IsSecureContext() const {
 
 External* nsGlobalWindowInner::External() {
   if (!mExternal) {
-    mExternal = new dom::External(ToSupports(this));
+    mExternal = MakeRefPtr<dom::External>(ToSupports(this));
   }
 
   return mExternal;
@@ -7722,7 +7806,7 @@ void nsGlobalWindowInner::GetWebExposedLocales(nsTArray<nsString>& aLocales) {
 
 IntlUtils* nsGlobalWindowInner::GetIntlUtils(ErrorResult& aError) {
   if (!mIntlUtils) {
-    mIntlUtils = new IntlUtils(this);
+    mIntlUtils = MakeRefPtr<IntlUtils>(this);
   }
 
   return mIntlUtils;
@@ -7740,6 +7824,19 @@ void nsGlobalWindowInner::ForgetSharedWorker(SharedWorker* aSharedWorker) {
   MOZ_ASSERT(mSharedWorkers.Contains(aSharedWorker));
 
   mSharedWorkers.RemoveElement(aSharedWorker);
+}
+
+void nsGlobalWindowInner::UpdateSharedWorkersLanguageOverride(
+    const nsCString& aLanguageOverride) {
+  nsTArray<nsString> resolvedLanguages;
+  Navigator::GetAcceptLanguages(resolvedLanguages, aLanguageOverride.IsEmpty()
+                                                       ? nullptr
+                                                       : &aLanguageOverride);
+
+  for (RefPtr<mozilla::dom::SharedWorker> pinnedWorker :
+       mSharedWorkers.ForwardRange()) {
+    pinnedWorker->UpdateLanguageOverride(aLanguageOverride, resolvedLanguages);
+  }
 }
 
 RefPtr<GenericPromise> nsGlobalWindowInner::StorageAccessPermissionChanged(
@@ -7838,7 +7935,8 @@ ContentMediaController* nsGlobalWindowInner::GetContentMediaController() {
     return nullptr;
   }
 
-  mContentMediaController = new ContentMediaController(mBrowsingContext->Id());
+  mContentMediaController =
+      MakeRefPtr<ContentMediaController>(mBrowsingContext->Id());
   return mContentMediaController;
 }
 
@@ -8029,7 +8127,7 @@ WebIdentityHandler* nsPIDOMWindowInner::GetOrCreateWebIdentityHandler() {
   if (mWebIdentityHandler) {
     return mWebIdentityHandler;
   }
-  mWebIdentityHandler = new WebIdentityHandler(this);
+  mWebIdentityHandler = MakeRefPtr<WebIdentityHandler>(this);
   bool success = mWebIdentityHandler->MaybeCreateActor();
   if (!success) {
     mWebIdentityHandler = nullptr;
@@ -8039,7 +8137,7 @@ WebIdentityHandler* nsPIDOMWindowInner::GetOrCreateWebIdentityHandler() {
 
 CloseWatcherManager* nsPIDOMWindowInner::EnsureCloseWatcherManager() {
   if (!mCloseWatcherManager) {
-    mCloseWatcherManager = new CloseWatcherManager();
+    mCloseWatcherManager = MakeRefPtr<CloseWatcherManager>();
   }
   return mCloseWatcherManager;
 }

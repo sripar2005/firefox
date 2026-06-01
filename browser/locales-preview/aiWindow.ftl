@@ -123,6 +123,23 @@ aiwindow-firstrun-button = Let’s go!
 aiwindow-firstrun-back-button = Back
 aiwindow-firstrun-next-button = Next
 
+## These are labels describing model types in the smartbar model select.
+
+aiwindow-input-model-select-button-label-fast = Fast
+aiwindow-input-model-select-button-label-allpurpose = Flexible
+aiwindow-input-model-select-button-label-personal = Personal
+aiwindow-input-model-select-button-label-custom = Custom
+
+# Variables:
+# $ownerName (string) - The name of the model owner/provider
+# $model (string) - The model name
+aiwindow-input-model-select-menu-item-description = { $ownerName } { $model }
+aiwindow-input-model-select-menu-item-description-custom = Use your own LLM
+aiwindow-input-model-select-default-badge =
+    .label = Default
+    .title = The selected default model
+aiwindow-input-model-select-settings-link = Model settings
+
 ## Firstrun memories onboarding
 
 aiwindow-firstrun-memories-title = More helpful answers, on your terms
@@ -274,8 +291,8 @@ smart-window-confirm-close-tabs =
 
 # Shown after the Smart Window closes the user's current tab in response to a
 # natural language prompt action, anchored to the toolbar menu button.
-smartwindow-close-tab-callout-title = Tab closed!
-smartwindow-close-tab-callout-subtitle = Get back to this and your other closed tabs in History.
+smartwindow-close-tab-callout-title = Tab closed
+smartwindow-close-tab-callout-subtitle = Reopen tabs from History anytime.
 
 ## Smart Window new tab promo
 

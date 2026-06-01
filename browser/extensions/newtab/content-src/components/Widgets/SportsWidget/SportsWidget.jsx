@@ -12,9 +12,10 @@ import React, {
 } from "react";
 import { useSelector, batch } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
-import { useIntersectionObserver } from "../../../lib/utils";
+import { useIntersectionObserver, useSizeSubmenu } from "../../../lib/utils";
 import { SportsMatchRow } from "./SportsMatchRow";
 import { MoveSubmenu } from "../MoveSubmenu";
+import { WatchLiveModal } from "./WatchLiveModal";
 import { WIDGET_REGISTRY, resolveWidgetSize } from "common/WidgetsRegistry.mjs";
 import { useLocalizedTeamNames } from "./useLocalizedTeamNames.jsx";
 import {
@@ -64,6 +65,12 @@ const USER_ACTION_TYPES = {
 const PREF_NOVA_ENABLED = "nova.enabled";
 const PREF_SPORTS_WIDGET_SIZE = "widgets.sportsWidget.size";
 const PREF_SPORTS_WIDGET_LIVE_ENABLED = "widgets.sportsWidget.live.enabled";
+const PREF_FORCE_LIVE_DATA_TRUSTABLE = "widgets.sports.forceLiveDataTrustable";
+
+// World Cup 2026 kickoff: June 11, 2026 at 19:00 UTC. Used as a temporary
+// guard to ignore /live data while the endpoint still serves mock matches
+// pre-kickoff. Remove this once the backend returns empty pre-kickoff.
+const WORLD_CUP_KICKOFF_MS = Date.UTC(2026, 5, 11, 19, 0, 0);
 
 const SPORTS_WIDGET_REGISTRY_ENTRY = WIDGET_REGISTRY.find(
   widget => widget.id === "sportsWidget"
@@ -137,28 +144,44 @@ function getFollowedGradient(match, selectedTeamsSet, teamColorsByKey) {
   return `linear-gradient(to right, ${colors.join(", ")})`;
 }
 
+// eslint-disable-next-line max-statements
 function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
   const prefs = useSelector(state => state.Prefs.values);
   const sportsWidgetData = useSelector(state => state.SportsWidget);
 
   const widgetSize = resolveWidgetSize(SPORTS_WIDGET_REGISTRY_ENTRY, prefs);
-  const liveEnabled = prefs[PREF_SPORTS_WIDGET_LIVE_ENABLED];
+  // Mirror SportsFeed.liveEnabled — raw pref OR trainhopConfig.sports.liveEnabled.
+  // Reading the raw pref alone would leave a Nimbus-only rollout in a
+  // permanently-paused state: the feed would start polling, but tick()
+  // bails on empty visibleTabs and we'd never attach the observer to dispatch
+  // WIDGETS_SPORTS_LIVE_VISIBLE.
+  const liveEnabled =
+    prefs[PREF_SPORTS_WIDGET_LIVE_ENABLED] ||
+    prefs.trainhopConfig?.sports?.liveEnabled;
   const widgetsMayBeMaximized = prefs["widgets.system.maximized"];
-  const hasLiveGames = sportsWidgetData?.data?.matches?.current?.length > 0;
+  // /live currently serves mock data pre-kickoff, so ignore its contents
+  // until the kickoff timestamp. Drop this guard once the backend returns
+  // empty pre-kickoff.
+  const liveDataTrustable =
+    Date.now() >= WORLD_CUP_KICKOFF_MS || prefs[PREF_FORCE_LIVE_DATA_TRUSTABLE];
+  const hasLiveGames =
+    liveDataTrustable && sportsWidgetData?.data?.live?.length > 0;
   const hasPreviousResults =
     sportsWidgetData?.data?.matches?.previous?.length > 0;
-  const tournamentStarted = hasLiveGames || hasPreviousResults;
+  const hasUpcomingMatches = sportsWidgetData?.data?.matches?.next?.length > 0;
+  const tournamentStarted =
+    hasLiveGames || hasPreviousResults || hasUpcomingMatches;
   const savedWidgetState = sportsWidgetData.widgetState || WIDGET_STATES.INTRO;
-  // Once the tournament has started, skip the intro and open on the match schedule.
+  // Once the backend has any match data (upcoming, live, or completed), skip
+  // the intro and open on the match schedule.
   const widgetState =
     tournamentStarted && savedWidgetState === WIDGET_STATES.INTRO
       ? WIDGET_STATES.MATCHES
       : savedWidgetState;
-  const displaySize =
-    widgetState === WIDGET_STATES.FOLLOW_TEAMS ? "large" : widgetSize;
   const rawSelectedTeams = sportsWidgetData.selectedTeams;
   const rawTeams = sportsWidgetData?.data?.teams;
   const rawMatches = sportsWidgetData?.data?.matches;
+  const rawLive = liveDataTrustable ? sportsWidgetData?.data?.live : null;
   const selectedTeams = useMemo(
     () => rawSelectedTeams || [],
     [rawSelectedTeams]
@@ -204,19 +227,30 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
         rawMatches?.previous ?? [],
         selectedTeamsSet
       ),
-      sortedCurrent: sortFollowedFirst(
-        rawMatches?.current ?? [],
-        selectedTeamsSet
-      ),
+      sortedCurrent: sortFollowedFirst(rawLive ?? [], selectedTeamsSet),
       sortedNext: sortFollowedFirst(rawMatches?.next ?? [], selectedTeamsSet),
     };
-  }, [rawMatches, selectedTeamsSet]);
+  }, [rawMatches, rawLive, selectedTeamsSet]);
 
   // List-view toggle states for the Results and Upcoming tabs are lifted up
   // here so we can tell whether a highlight match is currently visible (for
-  // applying the followed-team gradient on the article wrapper).
+  // applying the followed-team gradient on the article wrapper) and so we
+  // can force the widget into the large size while the list view is open.
   const [showResultsList, setShowResultsList] = useState(false);
   const [showUpcomingList, setShowUpcomingList] = useState(false);
+
+  // Expand the widget to the large size when the user opens the match list
+  // view ("View all") on either the Results or Upcoming tab, and restore the
+  // user's chosen size when they collapse back to the highlight view. The
+  // size pref itself is left untouched — this is purely a visual override.
+  const isMatchesListView =
+    widgetState === WIDGET_STATES.MATCHES &&
+    ((activeTab === MATCHES_TABS.RESULTS && showResultsList) ||
+      (activeTab === MATCHES_TABS.UPCOMING && showUpcomingList));
+  const displaySize =
+    widgetState === WIDGET_STATES.FOLLOW_TEAMS || isMatchesListView
+      ? "large"
+      : widgetSize;
 
   const highlightMatch = getHighlightMatch({
     widgetState,
@@ -233,7 +267,24 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
     teamColorsByKey
   );
   const impressionFired = useRef(false);
-  const sizeSubmenuRef = useRef(null);
+  const introVideoRef = useRef(null);
+  const playIntroVideo = useMemo(() => {
+    const prefersReducedMotion =
+      globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ??
+      false;
+    return () => {
+      if (prefersReducedMotion) {
+        return;
+      }
+      const video = introVideoRef.current;
+      if (!video || !video.paused) {
+        return;
+      }
+      video.currentTime = 0;
+      video.play().catch(() => {});
+    };
+  }, []);
+  const [watchLiveOpen, setWatchLiveOpen] = useState(false);
 
   const handleIntersection = useCallback(() => {
     if (impressionFired.current) {
@@ -252,6 +303,50 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
   }, [dispatch, widgetSize]);
 
   const widgetRef = useIntersectionObserver(handleIntersection);
+  // Track the article element via state so the live-visibility effect below
+  // re-runs whenever React mounts a new node (e.g. after an early-return
+  // gate flips and the article appears for the first time). widgetRef is a
+  // stable useRef and can't drive re-runs on its own.
+  const [liveEl, setLiveEl] = useState(null);
+
+  // Live polling visibility gate. Separate from the one-shot impression
+  // observer above (which unobserves after the first intersect) — this one
+  // fires on every enter/leave so the feed can pause polling when no tab
+  // has the widget on-screen. Also listens for tab visibility changes:
+  // IntersectionObserver only reports viewport intersection, so a
+  // backgrounded tab would otherwise keep reporting VISIBLE forever.
+  useEffect(() => {
+    if (!liveEnabled || !liveEl) {
+      return undefined;
+    }
+    let isIntersecting = false;
+    const dispatchState = visible => {
+      dispatch(
+        ac.OnlyToMain({
+          type: visible
+            ? at.WIDGETS_SPORTS_LIVE_VISIBLE
+            : at.WIDGETS_SPORTS_LIVE_HIDDEN,
+        })
+      );
+    };
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        isIntersecting = entry.isIntersecting;
+        dispatchState(isIntersecting && !document.hidden);
+      },
+      // Match the impression observer's threshold so "visible enough to
+      // count" means the same thing for both.
+      { threshold: 0.3 }
+    );
+    observer.observe(liveEl);
+    const onVisibilityChange = () =>
+      dispatchState(isIntersecting && !document.hidden);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [liveEnabled, dispatch, liveEl]);
 
   const handleInteraction = useCallback(
     () => handleUserInteraction("sportsWidget"),
@@ -281,6 +376,9 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
   }
 
   function handleViewUpcoming() {
+    // Mark this as an explicit tab choice so the live-games auto-override
+    // doesn't pin activeTab back to NOW.
+    hasUserSelectedTab.current = true;
     batch(() => {
       dispatch(
         ac.OnlyToMain({
@@ -310,6 +408,9 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
   }
 
   function handleViewResults() {
+    // Mark this as an explicit tab choice so the live-games auto-override
+    // doesn't pin activeTab back to NOW.
+    hasUserSelectedTab.current = true;
     batch(() => {
       dispatch(
         ac.OnlyToMain({
@@ -410,20 +511,7 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
     [dispatch]
   );
 
-  useEffect(() => {
-    const el = sizeSubmenuRef.current;
-    if (!el) {
-      return undefined;
-    }
-    const listener = e => {
-      const item = e.composedPath().find(node => node.dataset?.size);
-      if (item) {
-        handleChangeSize(item.dataset.size);
-      }
-    };
-    el.addEventListener("click", listener);
-    return () => el.removeEventListener("click", listener);
-  }, [handleChangeSize]);
+  const sizeSubmenuRef = useSizeSubmenu(handleChangeSize);
 
   function handleViewMatches(widgetSource) {
     batch(() => {
@@ -570,8 +658,28 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
       }
       ref={el => {
         widgetRef.current = [el];
+        setLiveEl(el);
+      }}
+      onMouseEnter={playIntroVideo}
+      onFocus={e => {
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+          playIntroVideo();
+        }
       }}
     >
+      {widgetState === WIDGET_STATES.INTRO && (
+        <video
+          ref={introVideoRef}
+          className="sports-intro-video"
+          muted={true}
+          playsInline={true}
+          preload="auto"
+          aria-hidden="true"
+          tabIndex={-1}
+          poster={`chrome://newtab/content/data/content/assets/worldcup-${displaySize}.png`}
+          src={`chrome://newtab/content/data/content/assets/worldcup-${displaySize}.webm`}
+        />
+      )}
       <div className="sports-title-wrapper">
         {/* The empty self-closing div here is used to help center the title, since the context menu also takes up space. */}
         {widgetState === WIDGET_STATES.INTRO && <div />}
@@ -717,7 +825,8 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
             dispatch={dispatch}
             matchesTab={activeTab}
             hasLiveGames={hasLiveGames}
-            size={widgetSize}
+            size={displaySize}
+            widgetSize={widgetSize}
             previous={sortedPrevious}
             current={sortedCurrent}
             next={sortedNext}
@@ -728,6 +837,7 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
             setShowResultsList={setShowResultsList}
             showUpcomingList={showUpcomingList}
             setShowUpcomingList={setShowUpcomingList}
+            onWatchClick={() => setWatchLiveOpen(true)}
           />
         )}
         {widgetState === WIDGET_STATES.KEY_DATES && (
@@ -759,6 +869,13 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
           </>
         )}
       </div>
+      {watchLiveOpen && (
+        <WatchLiveModal
+          onClose={() => setWatchLiveOpen(false)}
+          dispatch={dispatch}
+          widgetSize={widgetSize}
+        />
+      )}
     </article>
   );
 }
@@ -892,7 +1009,14 @@ function SportsMatchesView({
   dispatch,
   matchesTab,
   hasLiveGames,
+  // `size` is the *effective* display size — it may be forced to "large"
+  // when the user has expanded the match list view, even if the user's
+  // chosen pref is "medium". Use it for layout decisions inside the view.
   size,
+  // `widgetSize` is the user's chosen size pref, used for telemetry only so
+  // events keep reporting the user's actual chosen size regardless of any
+  // temporary list-view expansion.
+  widgetSize,
   previous,
   current,
   next,
@@ -903,6 +1027,7 @@ function SportsMatchesView({
   setShowResultsList,
   showUpcomingList,
   setShowUpcomingList,
+  onWatchClick,
 }) {
   const resultsPanelRef = useRef(null);
   const upcomingPanelRef = useRef(null);
@@ -925,7 +1050,7 @@ function SportsMatchesView({
             widget_source: tab,
             user_action: USER_ACTION_TYPES.TOGGLE_FOLLOWED_ONLY,
             action_value: value,
-            widget_size: size,
+            widget_size: widgetSize,
           },
         })
       );
@@ -1064,7 +1189,7 @@ function SportsMatchesView({
                   followedTeams={selectedTeamsSet}
                 />
               </div>
-              {/* TODO: Add onClick handler + play icon when we start implementing Watch dialog UI */}
+              {/* TODO: Replace play icon when finalized */}
               <moz-button
                 type={size === "medium" ? "icon" : "default"}
                 size={size === "medium" ? "small" : undefined}
@@ -1074,6 +1199,7 @@ function SportsMatchesView({
                     ? "newtab-sports-widget-watch-icon"
                     : "newtab-sports-widget-watch"
                 }
+                onClick={onWatchClick}
               ></moz-button>
             </>
           )}

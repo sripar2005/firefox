@@ -198,7 +198,6 @@
 
     <!-- App icon settings-->
     <string name="pref_key_app_icon">pref_key_app_icon</string>
-    <string name="pref_key_app_icon_selection_enabled" translatable="false">pref_key_app_icon_selection_enabled</string>
 
     <!-- Cfr -->
     <string name="pref_key_menu_cfr" translatable="false">pref_key_menu_cfr</string>
@@ -425,8 +424,6 @@
 
     <string name="pref_key_login_exceptions" translatable="false">pref_key_login_exceptions</string>
 
-    <string name="pref_key_show_collections_placeholder_home" translatable="false">pref_key_show_collections_home</string>
-
     <string name="pref_key_num_font_list_sent"  translatable="false">pref_key_num_font_list_sent</string>
 
     <!-- Adjust Activated User values-->
@@ -585,10 +582,10 @@
 
     <!-- Downloads Settings Radio Button-->
     <string name="pref_key_downloads_delete_or_remove_downloads_category" translatable="false">pref_key_downloads_delete_or_remove_downloads_category</string>
-    <string name="pref_key_downloads_delete_from_device" translatable="false">pref_key_downloads_delete_from_device</string>
-    <string name="pref_key_downloads_remove_from_downloads_history" translatable="false">pref_key_downloads_remove_from_downloads_history</string>
-    <string name="pref_key_downloads_ask_when_to_delete_files" translatable="false">pref_key_downloads_ask_when_to_delete_files</string>
-    <string name="pref_key_downloads_delete_behavior" translatable="false">pref_key_downloads_delete_behavior</string>
+    <!-- pref_key_downloads_delete_behavior was replaced by pref_key_downloads_delete_behavior_v2 with Bug 2041355,
+      to reset the default value to "Ask when I delete files" for all users.
+      -->
+    <string name="pref_key_downloads_delete_behavior_v2" translatable="false">pref_key_downloads_delete_behavior_v2</string>
 
     <!-- Tab Manager-->
     <string name="pref_key_tab_manager_opening_animation" translatable="false">pref_key_tab_manager_opening_animation</string>
@@ -601,6 +598,7 @@
     <!-- Tab Groups -->
     <string name="pref_key_tab_groups" translatable="false">pref_key_tab_groups_feature</string>
     <string name="pref_key_tab_groups_drag_and_drop" translatable="false">pref_key_tab_groups_drag_and_drop</string>
+    <string name="pref_key_tab_groups_onboarding" translatable="false">pref_key_tab_groups_onboarding</string>
 
     <!-- Native Share Sheet -->
     <string name="pref_key_native_share_sheet" translatable="false">pref_key_native_share_sheet</string>
@@ -611,10 +609,15 @@
     <!-- Sports Widget -->
     <string name="pref_key_sports_selected_countries" translatable="false">pref_key_sports_selected_countries</string>
     <string name="pref_key_sports_has_skipped_follow_team" translatable="false">pref_key_sports_has_skipped_follow_team</string>
+    <string name="pref_key_use_mock_world_cup_server" translatable="false">pref_key_use_mock_world_cup_server</string>
+    <string name="pref_key_mock_world_cup_server_session" translatable="false">pref_key_mock_world_cup_server_session</string>
 
     <!-- Google Lens Integration -->
     <string name="pref_key_google_lens_integration" translatable="false">pref_key_google_lens_integration</string>
     <string name="pref_key_google_lens_integration_user_enabled" translatable="false">pref_key_google_lens_integration_user_enabled</string>
+
+    <!-- Voice Search in Display Toolbar -->
+    <string name="pref_key_show_voice_search_in_display_toolbar" translatable="false">pref_key_show_voice_search_in_display_toolbar</string>
     <!--  Search Optimization Cards  -->
     <string name="pref_key_search_optimization" translatable="false">pref_key_search_optimization</string>
     <string name="pref_key_search_optimization_feature" translatable="false">pref_key_search_optimization_feature</string>

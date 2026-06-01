@@ -228,10 +228,15 @@ class Assembler : public AssemblerShared,
     MOZ_ASSERT(!isFinished);
     isFinished = true;
   }
+
   void enterNoPool(size_t maxInst, size_t maxNewDeadlines = 0) {
     m_buffer.enterNoPool(maxInst, maxNewDeadlines);
   }
   void leaveNoPool() { m_buffer.leaveNoPool(); }
+
+  void enterNoNops() { m_buffer.enterNoNops(); }
+  void leaveNoNops() { m_buffer.leaveNoNops(); }
+
   bool swapBuffer(wasm::Bytes& bytes);
   // Size of the instruction stream, in bytes.
   size_t size() const;
@@ -304,12 +309,17 @@ class Assembler : public AssemblerShared,
   static void WritePoolGuard(BufferOffset branch, Instruction* inst,
                              BufferOffset dest);
   void processCodeLabels(uint8_t* rawCode);
-  BufferOffset nextOffset() { return m_buffer.nextOffset(); }
+
+  // Get the next usable buffer offset. Note that a constant pool may be placed
+  // here before the next instruction is emitted.
+  BufferOffset nextOffset() const { return m_buffer.nextOffset(); }
+
   // Get the buffer offset of the next inserted instruction. This may flush
-  // constant pools.
+  // constant pools and emit veneers.
   BufferOffset nextInstrOffset(unsigned numInsts, unsigned numNewDeadlines) {
     return m_buffer.nextInstrOffset(numInsts, numNewDeadlines);
   }
+
   void comment(const char* msg) { spew("; %s", msg); }
 
 #ifdef JS_JITSPEW
@@ -399,18 +409,8 @@ class Assembler : public AssemblerShared,
   int32_t branchOffsetHelper(Label* L, OffsetSize bits);
   int32_t branchLongOffsetHelper(Label* L);
 
-  // Determines if Label is bound and near enough so that branch instruction
-  // can be used to reach it, instead of jump instruction.
-  bool isNear(Label* L);
-  bool isNear(Label* L, OffsetSize bits);
-  bool is_near_branch(Label* L);
+  void nopAlign(int m) { m_buffer.align(m); }
 
-  void nopAlign(int m) {
-    MOZ_ASSERT(m >= 4 && (m & (m - 1)) == 0);
-    while ((currentOffset() & (m - 1)) != 0) {
-      nop();
-    }
-  }
   virtual BufferOffset emit(Instr x) {
     MOZ_ASSERT(hasCreator());
     BufferOffset offset = m_buffer.putInt(x);
@@ -519,16 +519,14 @@ class Assembler : public AssemblerShared,
     return &scratch_register_list_;
   }
 
-  // As opposed to x86/x64 version, the data relocation has to be executed
-  // before to recover the pointer, and not after.
-  void writeDataRelocation(ImmGCPtr ptr) {
+  void writeDataRelocation(ImmGCPtr ptr, BufferOffset offset) {
     // Raw GC pointer relocations and Value relocations both end up in
     // TraceOneDataRelocation.
     if (ptr.value) {
       if (gc::IsInsideNursery(ptr.value)) {
         embedsNurseryPointers_ = true;
       }
-      dataRelocations_.writeUnsigned(nextOffset().getOffset());
+      dataRelocations_.writeUnsigned(offset.getOffset());
     }
   }
 
@@ -555,10 +553,14 @@ class Assembler : public AssemblerShared,
   static int RecursiveLiImplCount(int64_t imm);
   // Returns the number of instructions required to load the immediate
   static int li_estimate(int64_t imm, bool is_get_temp_reg = false);
+
   // Loads an immediate, always using 8 instructions, regardless of the value,
   // so that it can be modified later.
-  void li_constant(Register rd, int64_t imm);
-  void li_ptr(Register rd, int64_t imm);
+  BufferOffset li_constant(Register rd, int64_t imm);
+
+  // Loads an immediate, always using 6 instructions, regardless of the value,
+  // so that it can be modified later.
+  BufferOffset li_ptr(Register rd, int64_t imm);
 
   void SignExtendByte(Register rd, Register rs) {
     if (HasZbbExtension()) {
@@ -604,26 +606,6 @@ class ABIArgGenerator : public ABIArgGeneratorShared {
   unsigned intRegIndex_;
   unsigned floatRegIndex_;
   ABIArg current_;
-};
-
-// Note that nested uses of these are allowed, but the inner calls must imply
-// an area of code which exists only inside the area of code implied by the
-// outermost call.  Otherwise AssemblerBufferWithConstantPools::enterNoPool
-// will assert.
-class BlockTrampolinePoolScope {
- public:
-  explicit BlockTrampolinePoolScope(Assembler* assem, size_t margin,
-                                    size_t maxBranches = 0)
-      : assem_(assem) {
-    assem_->enterNoPool(margin, maxBranches);
-  }
-  ~BlockTrampolinePoolScope() { assem_->leaveNoPool(); }
-
- private:
-  Assembler* assem_;
-  BlockTrampolinePoolScope() = delete;
-  BlockTrampolinePoolScope(const BlockTrampolinePoolScope&) = delete;
-  BlockTrampolinePoolScope& operator=(const BlockTrampolinePoolScope&) = delete;
 };
 
 class UseScratchRegisterScope {
@@ -718,6 +700,41 @@ static inline bool GetTempRegForIntArg(uint32_t usedIntArgs,
   *out = CallTempNonArgRegs[usedIntArgs];
   return true;
 }
+
+// Forbids nop filling for testing purposes. Nestable, but nested calls have
+// no effect on the no-nops status; it is only the top level one that counts.
+class AutoForbidNops {
+  Assembler* asm_;
+
+ public:
+  explicit AutoForbidNops(Assembler* asm_) : asm_(asm_) { asm_->enterNoNops(); }
+  ~AutoForbidNops() { asm_->leaveNoNops(); }
+
+  AutoForbidNops(const AutoForbidNops&) = delete;
+  AutoForbidNops& operator=(const AutoForbidNops&) = delete;
+};
+
+// Forbids pool generation during a specified interval. Nestable, but nested
+// calls must imply a no-pool area of the assembler buffer that is completely
+// contained within the area implied by the outermost level call.
+class AutoForbidPoolsAndNops {
+  Assembler* asm_;
+
+ public:
+  explicit AutoForbidPoolsAndNops(Assembler* assem, size_t margin,
+                                  size_t maxBranches = 0)
+      : asm_(assem) {
+    asm_->enterNoPool(margin, maxBranches);
+    asm_->enterNoNops();
+  }
+  ~AutoForbidPoolsAndNops() {
+    asm_->leaveNoNops();
+    asm_->leaveNoPool();
+  }
+
+  AutoForbidPoolsAndNops(const AutoForbidPoolsAndNops&) = delete;
+  AutoForbidPoolsAndNops& operator=(const AutoForbidPoolsAndNops&) = delete;
+};
 
 }  // namespace jit
 }  // namespace js

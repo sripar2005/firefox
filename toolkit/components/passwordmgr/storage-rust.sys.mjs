@@ -300,6 +300,13 @@ class RustLoginStorageAuthenticator extends PrimaryPasswordAuthenticator {
 export class LoginManagerRustStorage {
   #storageAdapter = null;
   #initializationPromise = null;
+  // Only the active backend fires storage-changed events to avoid duplicates
+  // when both JSON and Rust stores are initialized.
+  // Default is false (json is active)
+  #isActive = false;
+  set isActive(v) {
+    this.#isActive = v;
+  }
 
   // have it a singleton
   constructor() {
@@ -422,6 +429,15 @@ export class LoginManagerRustStorage {
       continueOnDuplicates
     );
 
+    if (this.#isActive) {
+      for (const item of result) {
+        const login = continueOnDuplicates ? item.login : item;
+        if (login) {
+          lazy.LoginHelper.notifyStorageChanged("addLogin", login);
+        }
+      }
+    }
+
     return result;
   }
 
@@ -430,14 +446,13 @@ export class LoginManagerRustStorage {
   }
 
   async modifyLoginAsync(oldLogin, newLoginData, _fromSync) {
-    const oldStoredLogin =
-      await this.#storageAdapter.findLoginToUpdate(oldLogin);
+    const oldStoredLogin = await this.#storageAdapter.get(oldLogin.guid);
 
     if (!oldStoredLogin) {
       throw new Error("No matching logins");
     }
 
-    const idToModify = oldStoredLogin.guid;
+    const idToModify = oldLogin.guid;
 
     const newLogin = lazy.LoginHelper.buildModifiedLogin(
       oldStoredLogin,
@@ -474,6 +489,14 @@ export class LoginManagerRustStorage {
       idToModify,
       newLogin
     );
+
+    if (this.#isActive) {
+      lazy.LoginHelper.notifyStorageChanged("modifyLogin", [
+        oldStoredLogin,
+        updatedLogin,
+      ]);
+    }
+
     return updatedLogin;
   }
 
@@ -680,13 +703,14 @@ export class LoginManagerRustStorage {
   }
 
   async removeLoginAsync(login, _fromSync) {
-    const storedLogin = await this.#storageAdapter.findLoginToUpdate(login);
-
-    if (!storedLogin) {
+    const deleted = await this.#storageAdapter.delete(login.guid);
+    if (!deleted) {
       throw new Error("No matching logins");
     }
 
-    await this.#storageAdapter.delete(storedLogin.guid);
+    if (this.#isActive) {
+      lazy.LoginHelper.notifyStorageChanged("removeLogin", login);
+    }
   }
 
   /**
@@ -700,7 +724,11 @@ export class LoginManagerRustStorage {
   }
 
   async removeAllLoginsAsync() {
-    return await this.#removeLogins(false, true);
+    const removed = await this.#removeLogins(false, true);
+    if (this.#isActive) {
+      lazy.LoginHelper.notifyStorageChanged("removeAllLogins", removed ?? []);
+    }
+    return removed;
   }
 
   /**
@@ -800,6 +828,12 @@ export class LoginManagerRustStorage {
     await this.#storageAdapter.recordPotentiallyVulnerablePasswords([
       login.password,
     ]);
+    if (this.#isActive) {
+      lazy.LoginHelper.notifyStorageChanged(
+        "addPotentiallyVulnerablePassword",
+        login
+      );
+    }
   }
 
   // adding multiple potentially vulnerable passwords during migration
@@ -820,6 +854,11 @@ export class LoginManagerRustStorage {
 
   async clearAllPotentiallyVulnerablePasswords() {
     await this.#storageAdapter.clearAllPotentiallyVulnerablePasswords();
+    if (this.#isActive) {
+      lazy.LoginHelper.notifyStorageChanged(
+        "clearAllPotentiallyVulnerablePasswords"
+      );
+    }
   }
 
   get _crypto() {

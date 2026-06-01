@@ -12,6 +12,7 @@ const { AppConstants } = ChromeUtils.importESModule(
 
 import { SearchModeSwitcher } from "chrome://browser/content/urlbar/SearchModeSwitcher.mjs";
 import { UrlbarEventBufferer } from "chrome://browser/content/urlbar/UrlbarEventBufferer.mjs";
+import { UrlbarView } from "chrome://browser/content/urlbar/UrlbarView.mjs";
 
 /**
  * @import { UrlbarSearchOneOffs } from "moz-src:///browser/components/urlbar/UrlbarSearchOneOffs.sys.mjs"
@@ -49,6 +50,8 @@ const lazy = XPCOMUtils.declareLazy({
     "moz-src:///browser/components/search/BrowserSearchTelemetry.sys.mjs",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   CustomizableUI:
     "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   ExtensionSearchHandler:
@@ -78,7 +81,6 @@ const lazy = XPCOMUtils.declareLazy({
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
   UrlbarValueFormatter:
     "moz-src:///browser/components/urlbar/UrlbarValueFormatter.sys.mjs",
-  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
   UrlbarSearchTermsPersistence:
     "moz-src:///browser/components/urlbar/UrlbarSearchTermsPersistence.sys.mjs",
   UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
@@ -256,7 +258,6 @@ ${
 
   /** @type {AutofillPlaceholder|null} */
   _autofillPlaceholder = null;
-  _autofillBackspaceState = null;
 
   _resultForCurrentValue = null;
   _untrimmedValue = "";
@@ -365,7 +366,7 @@ ${
     }
 
     this.controller = new lazy.UrlbarController({ input: this });
-    this.view = new lazy.UrlbarView(this);
+    this.view = new UrlbarView(this);
     this.searchModeSwitcher = new SearchModeSwitcher(this);
 
     let searchModeSwitcherDescription = this.querySelector(
@@ -417,21 +418,12 @@ ${
       return;
     }
 
-    if (!Services.prefs.getBoolPref("browser.nova.enabled", false)) {
-      if (attribute == "open") {
-        if (this.view.isOpen && this.view.visibleRowCount) {
-          this.startLayoutExtend();
-        } else {
-          this.endLayoutExtend();
-        }
-      }
-      return;
-    }
-
-    if (this.focused || (this.view.isOpen && this.view.visibleRowCount)) {
-      this.startLayoutExtend();
-    } else {
-      this.endLayoutExtend();
+    if (
+      Services.prefs.getBoolPref("browser.nova.enabled", false) ||
+      attribute == "open"
+    ) {
+      // Update only if 'open' attribute is changed for not Nova.
+      this.updateLayoutExtend();
     }
   }
 
@@ -1518,6 +1510,15 @@ ${
     }
 
     if (
+      lazy.UrlbarPrefs.get("autoFill.adaptiveHistory.enabled") &&
+      result.autofill &&
+      result.payload?.url &&
+      !this.isPrivate
+    ) {
+      lazy.UrlbarUtils.clearAutofillBackspaceEntryForUrl(result.payload.url);
+    }
+
+    if (
       result.providerName == lazy.UrlbarProviderGlobalActions.name &&
       this.#providesSearchMode(result)
     ) {
@@ -1979,7 +1980,7 @@ ${
       ) {
         input = result.autofill.adaptiveHistoryInput;
       } else if (
-        lazy.UrlbarPrefs.get("autoFillAdaptiveHistoryEnabled") &&
+        lazy.UrlbarPrefs.get("autoFill.adaptiveHistory.enabled") &&
         result.autofill?.type == "origin" &&
         // Bug: 2026227: Investigate if we want to use a higher threshold
         this._lastSearchString?.length > 0
@@ -2003,7 +2004,7 @@ ${
       // Re-integration: If the user picks a non-autofill result for a URL
       // that has a blocked origin, clear the block.
       if (
-        lazy.UrlbarPrefs.get("autoFillAdaptiveHistoryEnabled") &&
+        lazy.UrlbarPrefs.get("autoFill.adaptiveHistory.enabled") &&
         !result.autofill &&
         result.type == lazy.UrlbarUtils.RESULT_TYPE.URL
       ) {
@@ -2213,12 +2214,6 @@ ${
       this._autofillPlaceholder.selectionEnd = this.value.length;
     }
 
-    // Reset backspace dismissal tracking when navigating to a non-autofill
-    // result. The placeholder may already be null if the user backspaced away
-    // the autofill text before arrowing down.
-    if (!result.autofill && this._autofillBackspaceState) {
-      this._autofillBackspaceState = null;
-    }
     return false;
   }
 
@@ -2982,6 +2977,7 @@ ${
 
     if (
       this.view.isOpen &&
+      this.view.visibleRowCount &&
       !Services.prefs.getBoolPref("browser.nova.enabled", false)
     ) {
       return;
@@ -2989,6 +2985,23 @@ ${
 
     this.toggleAttribute("breakout-extend", false);
     this.#updateTextboxPosition();
+  }
+
+  updateLayoutExtend() {
+    if (!Services.prefs.getBoolPref("browser.nova.enabled", false)) {
+      if (this.view.isOpen && this.view.visibleRowCount) {
+        this.startLayoutExtend();
+      } else {
+        this.endLayoutExtend();
+      }
+      return;
+    }
+
+    if (this.focused || (this.view.isOpen && this.view.visibleRowCount)) {
+      this.startLayoutExtend();
+    } else {
+      this.endLayoutExtend();
+    }
   }
 
   /**
@@ -3566,7 +3579,6 @@ ${
   _resetSearchState() {
     this._lastSearchString = this.value;
     this._autofillPlaceholder = null;
-    this._autofillBackspaceState = null;
   }
 
   /**
@@ -5099,7 +5111,7 @@ ${
     }
 
     let engine = lazy.SearchService.getEngineByName(engineName);
-    if (engine.isConfigEngine) {
+    if (engine instanceof lazy.ConfigSearchEngine) {
       this._setPlaceholder(engineName);
     } else {
       // Display the default placeholder string.
@@ -5249,8 +5261,6 @@ ${
     this._isKeyDownWithCtrl = false;
     this._isKeyDownWithMeta = false;
     this._isKeyDownWithMetaAndLeft = false;
-
-    this._autofillBackspaceState = null;
 
     Services.obs.notifyObservers(null, "urlbar-blur");
   }
@@ -5469,44 +5479,17 @@ ${
     }
 
     if (
-      lazy.UrlbarPrefs.get("autoFillAdaptiveHistoryEnabled") &&
-      event.inputType === "deleteContentBackward"
+      lazy.UrlbarPrefs.get("autoFill.adaptiveHistory.enabled") &&
+      event.inputType?.startsWith("deleteContent") &&
+      !this.isPrivate &&
+      this._autofillPlaceholder &&
+      this.value === this.userTypedValue &&
+      this._resultForCurrentValue?.payload?.url
     ) {
-      if (
-        !this._autofillBackspaceState &&
-        this._autofillPlaceholder &&
-        this._autofillPlaceholder.selectionStart <
-          this._autofillPlaceholder.selectionEnd
-      ) {
-        this._autofillBackspaceState = {
-          url: this._resultForCurrentValue?.payload?.url,
-          count: 0,
-        };
-      }
-      if (this._autofillBackspaceState) {
-        this._autofillBackspaceState.count++;
-        if (
-          this._autofillBackspaceState.count >=
-          lazy.UrlbarPrefs.get("autoFill.backspaceThreshold")
-        ) {
-          if (!this.isPrivate) {
-            let { url } = this._autofillBackspaceState;
-            if (url) {
-              let blockUntil =
-                Date.now() +
-                lazy.UrlbarPrefs.get("autoFill.backspaceBlockDurationMs");
-              lazy.UrlbarUtils.blockAutofill(url, blockUntil).catch(
-                console.error
-              );
-              lazy.UrlbarUtils.trackBackspaceBlock(url);
-            }
-          }
-          this._autofillBackspaceState = null;
-        }
-      }
-    } else if (this._autofillBackspaceState) {
-      // Any non-backspace input resets the state.
-      this._autofillBackspaceState = null;
+      lazy.UrlbarUtils._lastRecordAutofillBackspacePromise =
+        lazy.UrlbarUtils.recordAutofillBackspace(
+          this._resultForCurrentValue.payload.url
+        );
     }
 
     let value = this.value;

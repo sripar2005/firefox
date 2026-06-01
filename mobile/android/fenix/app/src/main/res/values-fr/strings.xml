@@ -23,6 +23,8 @@
   <string name="content_description_normal_browsing">Navigation classique</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Recherche ou adresse</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Rechercher</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Rechercher sur le Web</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -464,6 +466,8 @@
   <string name="search_suggestions_delete_history_item_snackbar">%1$s supprimé de l’historique</string>
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">Supprimer cette entrée de l’historique</string>
+  <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="applinks_prompt_negative_button">Rester dans %1$s</string>
   <!--
     Home onboarding
 
@@ -1643,6 +1647,8 @@
   <string name="tab_manager_search_bar_placeholder">Rechercher parmi vos onglets</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Onglets récemment fermés</string>
+  <!-- Text shown in the menu to select all tabs. -->
+  <string name="tab_tray_menu_select_all_tabs">Tout sélectionner</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Paramètres du compte</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -1706,13 +1712,13 @@
   <!-- Content description (not visible, for screen readers etc.) for the button to open the Tab Search feature to search through tabs. -->
   <string name="tab_manager_open_tab_search">Ouvrir la recherche d’onglet</string>
   <!-- Title for introducing tab groups via an onboarding card shown in the tab manager. -->
-  <string name="tab_group_onboarding_item_title">Créer un groupe d’onglets</string>
+  <string name="tab_group_onboarding_item_title">Créez un groupe d’onglets</string>
   <!-- Description for tab groups onboarding shown in the tab manager when in grid view. -->
-  <string name="tab_group_onboarding_grid_item_description">Faites glisser des onglets vers un autre pour les regrouper.</string>
+  <string name="tab_group_onboarding_grid_item_description">Faites glisser un onglet sur un autre pour créer un groupe.</string>
   <!-- Description for tab groups onboarding shown in the tab manager when in list view. -->
   <string name="tab_group_onboarding_list_item_description">Sélectionnez plusieurs onglets pour créer un groupe.</string>
   <!-- Content description (accessibility label) for button to dismiss the tab group onboarding item. -->
-  <string name="tab_group_onboarding_item_dismiss_content_description">Fermer l’accueil du groupe d’onglets</string>
+  <string name="tab_group_onboarding_item_dismiss_content_description">Fermer l’accueil des groupes d’onglets</string>
   <!-- The header text displayed on the tab groups page when no tab groups are open -->
   <string name="tab_manager_empty_tab_groups_page_header">Essayez les groupes d’onglets pour gagner en efficacité</string>
   <!-- The description displayed on the tab groups page when no tab groups are open -->
@@ -2695,6 +2701,15 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">%s vous protège de la plupart des traqueurs les plus courants qui pistent vos activités en ligne.</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">En savoir plus</string>
+  <plurals name="trackers_blocked_count_2">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d traqueur bloqué</item>
+    <item quantity="other">%d\u00a0traqueurs bloqués</item>
+  </plurals>
   <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
@@ -2832,6 +2847,8 @@
   <string name="etp_suspected_fingerprinters_description">Activer la protection contre les empreintes numériques pour bloquer les détecteurs d’empreintes numériques suspectés.</string>
   <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_known_fingerprinters_title">Détecteurs d’empreinte numérique connus</string>
+  <!-- Label for the fingerprinters category shown in the tracking protections dashboard breakdown -->
+  <string name="tracking_dashboard_fingerprinters_category_name">Détecteurs d’empreinte numérique</string>
   <!--
     Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
     as we use it on the UI to indicate which trackers have been partially unblocked.
@@ -3086,6 +3103,8 @@
   <string name="saved_logins_sort_strategy_last_used">Dernière utilisation</string>
   <!-- Content description (not visible, for screen readers etc.) -->
   <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">Menu de tri des mots de passe</string>
+  <!-- Label for button to import passwords from file. -->
+  <string name="passwords_import_menu_button">Importer depuis un fichier</string>
   <!--
     Email Masks
 
@@ -4449,11 +4468,11 @@
   <!-- Label shown on the sports widget scoreboard when a match is currently being played live. -->
   <string name="sports_widget_match_live">EN\u00a0DIRECT</string>
   <!-- Title shown on the sports widget champion scoreboard row celebrating the soccer tournament winner. -->
-  <string name="sports_widget_champions_title" tools:ignore="UnusedResources">Champions du monde 2026</string>
+  <string name="sports_widget_champions_title">Champions du monde 2026</string>
   <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament runners-up. Runners-up means second place. -->
   <string name="sports_widget_runner_up_title" tools:ignore="UnusedResources">Finalistes</string>
   <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament third place winners. -->
-  <string name="sports_widget_third_place_title" tools:ignore="UnusedResources">Troisième place</string>
+  <string name="sports_widget_third_place_title">Troisième place</string>
   <!-- Round name shown on the sports widget for the Round of 32 stage in the soccer tournament. -->
   <string name="sports_widget_round_of_32">16es de finale</string>
   <!-- Round name shown on the sports widget for the Round of 16 stage in the soccer tournament. -->
@@ -4613,6 +4632,8 @@
     %1$d is the current page number, and %2$d is the total number of pages.
   -->
   <string name="sports_widget_final_results_page_content_description" tools:ignore="UnusedResources">Résultats définitifs de la Coupe du monde, page %1$d sur %2$d</string>
+  <!-- Content description (for accessibility, not displayed) for the World Cup final results page. -->
+  <string name="sports_widget_final_results_content_description">Résultats définitifs de la Coupe du monde</string>
   <!-- Content description (for accessibility, not displayed) for the remove button that removes the sports widget from the homepage. -->
   <string name="sports_widget_remove_content_description" tools:ignore="UnusedResources">Retirer la Coupe du monde de l’accueil</string>
   <!-- Title shown on the sports widget immediately after the user has followed a team. %s is the selected team (e.g., "USA"). -->
@@ -4630,9 +4651,11 @@
   <!-- Sports widget general group stage label in the soccer tournament. -->
   <string name="sports_widget_group_stage">Phase de groupes</string>
   <!-- Sports widget error card title shown when match data fails to load. -->
-  <string name="sports_widget_error_load_failed_title">Les informations de correspondance ne sont pas disponibles pour le moment.</string>
+  <string name="sports_widget_error_load_failed_title">Les informations du match ne sont pas disponibles pour le moment.</string>
   <!-- Sports widget error card description shown when match data fails to load. -->
   <string name="sports_widget_error_load_failed_description">Essayez d’actualiser dans quelques minutes.</string>
+  <!-- Content description (for accessibility, not displayed) for teams which have not yet been determined in the match schedule. -->
+  <string name="sports_widget_team_to_be_determined">Équipe à déterminer</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->
 
   <!--
@@ -4647,4 +4670,29 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">Politique de confidentialité</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">En savoir plus</string>
+  <!--
+    Firefox Labs
+
+    Banner title text on the Firefox Labs screen.
+  -->
+  <string name="firefox_labs_banner_title">Essayez nos fonctionnalités expérimentales\u00a0!</string>
+  <!--
+    Banner description text on the Firefox Labs screen. Provides information on what Firefox Labs does. %s is the name of the app (for example "Firefox Nightly").
+    Text will appear under the Firefox Labs banner title.
+  -->
+  <string name="firefox_labs_experimental_description">Elles sont en cours de développement et évoluent, ce qui pourrait affecter le fonctionnement de %s.</string>
+  <!-- Button text on the Firefox Labs screen for restoring all toggles back to the default settings. The button will turn off any experimental features. -->
+  <string name="firefox_labs_restore_default_button_text">Restaurer les valeurs par défaut</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
+  <string name="firefox_labs_feature_dialog_title">Redémarrage nécessaire</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->
+  <string name="firefox_labs_dialog_restart_button">Redémarrer</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->
+  <string name="firefox_labs_dialog_cancel_button">Annuler</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. -->
+  <string name="firefox_labs_restore_defaults_dialog_title">Redémarrage nécessaire</string>
+  <!-- The description used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_restore_defaults_dialog_message">Pour restaurer les valeurs par défaut, redémarrez %s.</string>
+  <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
+  <string name="firefox_labs_no_labs_available_description">Aucune fonctionnalité expérimentale à essayer pour l’instant</string>
 </resources>

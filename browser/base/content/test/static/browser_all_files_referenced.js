@@ -105,6 +105,9 @@ var gExceptionPaths = [
   // The profile avatars are directly referenced.
   "chrome://browser/content/profiles/assets/",
 
+  // The custom model choice icon is referenced programatically in input-model-select.mjs.
+  "chrome://browser/content/aiwindow/assets/model-choice-0.svg",
+
   // The picture-in-picture add-on.
   "resource://builtin-addons/pictureinpicture/",
 
@@ -177,7 +180,7 @@ var allowlist = [
 
   // devtools/client/inspector/bin/dev-server.js
   {
-    file: "chrome://devtools/content/inspector/markup/markup.xhtml",
+    file: "chrome://devtools/content/inspector/markup/markup.html",
     isFromDevTools: true,
   },
 
@@ -328,6 +331,12 @@ var allowlist = [
   // richlist items with autocomplete-row-item
   {
     file: "chrome://global/content/autocomplete-row-item/autocomplete-row-item.mjs",
+  },
+
+  // Bug 2041770: MemoriesSessions is introduced ahead of its production
+  // Remove this entry once the consumer lands.
+  {
+    file: "moz-src:///browser/components/aiwindow/models/memories/MemoriesSessions.sys.mjs",
   },
 
   // Referenced dynamically in newtab components via template literals:

@@ -9,8 +9,6 @@ import mozilla.components.feature.tab.collections.TabCollection
 import mozilla.components.feature.top.sites.TopSite
 import mozilla.components.service.nimbus.messaging.Message
 import mozilla.components.service.pocket.PocketStory
-import mozilla.telemetry.glean.private.NoExtras
-import org.mozilla.fenix.GleanMetrics.Homepage
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.setup.checklist.ChecklistItem
@@ -18,6 +16,7 @@ import org.mozilla.fenix.home.bookmarks.Bookmark
 import org.mozilla.fenix.home.bookmarks.controller.BookmarksController
 import org.mozilla.fenix.home.interactor.HomepageInteractor
 import org.mozilla.fenix.home.logo.LogoController
+import org.mozilla.fenix.home.logo.TrackingProtectionController
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
 import org.mozilla.fenix.home.pocket.controller.PocketStoriesController
 import org.mozilla.fenix.home.privatebrowsing.controller.PrivateBrowsingController
@@ -31,6 +30,8 @@ import org.mozilla.fenix.home.recentvisits.controller.RecentVisitsController
 import org.mozilla.fenix.home.search.HomeSearchController
 import org.mozilla.fenix.home.sports.CountrySelectorSource
 import org.mozilla.fenix.home.sports.LiveMatchRefreshSource
+import org.mozilla.fenix.home.sports.SportsCardImpressionSource
+import org.mozilla.fenix.home.sports.SportsCardType
 import org.mozilla.fenix.home.sports.SportsController
 import org.mozilla.fenix.home.termsofuse.PrivacyNoticeBannerController
 import org.mozilla.fenix.home.toolbar.ToolbarController
@@ -123,11 +124,6 @@ interface CollectionInteractor {
      * Opens the collection creator
      */
     fun onAddTabsToCollectionTapped()
-
-    /**
-     * User has removed the collections placeholder from home.
-     */
-    fun onRemoveCollectionsPlaceholder()
 }
 
 interface MessageCardInteractor {
@@ -205,6 +201,7 @@ class SessionControlInteractor(
     private val homeSearchController: HomeSearchController,
     private val topSiteController: TopSiteController,
     private val privacyNoticeBannerController: PrivacyNoticeBannerController,
+    private val trackingProtectionController: TrackingProtectionController,
     private val logoController: LogoController,
     private val sportsController: SportsController,
 ) : HomepageInteractor {
@@ -311,10 +308,6 @@ class SessionControlInteractor(
 
     override fun onHomeContentFocusedWhileSearchIsActive() {
         homeSearchController.handleHomeContentFocusedWhileSearchIsActive()
-    }
-
-    override fun onRemoveCollectionsPlaceholder() {
-        controller.handleRemoveCollectionsPlaceholder()
     }
 
     override fun onRecentTabClicked(tabId: String) {
@@ -452,7 +445,7 @@ class SessionControlInteractor(
     }
 
     override fun onPrivacyReportTapped() {
-        Homepage.privacyReportTapped.record(NoExtras())
+        trackingProtectionController.handleProtectionStatusPillClicked()
     }
 
     override fun onLongfoxEntryPointClicked() {
@@ -467,8 +460,8 @@ class SessionControlInteractor(
         sportsController.handleMatchClicked(homeTeam = homeTeam, awayTeam = awayTeam, date = date)
     }
 
-    override fun onSportsWidgetShown() {
-        sportsController.handleSportsWidgetShown()
+    override fun onSportsWidgetCardShown(cardType: SportsCardType, source: SportsCardImpressionSource) {
+        sportsController.handleSportsWidgetCardShown(cardType = cardType, source = source)
     }
 
     override fun onCountrySelectorShown(source: CountrySelectorSource) {

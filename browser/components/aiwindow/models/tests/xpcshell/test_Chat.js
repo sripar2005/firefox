@@ -9,7 +9,7 @@ const { ChatConversation } = ChromeUtils.importESModule(
 const { SYSTEM_PROMPT_TYPE, MESSAGE_ROLE } = ChromeUtils.importESModule(
   "moz-src:///browser/components/aiwindow/ui/modules/AIWindowConstants.sys.mjs"
 );
-const { Chat } = ChromeUtils.importESModule(
+const { Chat, executeToolByName } = ChromeUtils.importESModule(
   "moz-src:///browser/components/aiwindow/models/Chat.sys.mjs"
 );
 const { RunSearch, GetPageContent, toolFns } = ChromeUtils.importESModule(
@@ -33,6 +33,7 @@ const { sinon } = ChromeUtils.importESModule(
 const PREF_API_KEY = "browser.smartwindow.apiKey";
 const PREF_ENDPOINT = "browser.smartwindow.endpoint";
 const PREF_MODEL = "browser.smartwindow.model";
+const PREF_MODEL_CHOICE = "browser.smartwindow.firstrun.modelChoice";
 
 // Clean prefs after all tests
 registerCleanupFunction(() => {
@@ -83,6 +84,7 @@ add_task(
     Services.prefs.setStringPref(PREF_API_KEY, "test-key-123");
     Services.prefs.setStringPref(PREF_ENDPOINT, "https://example.test/v1");
     Services.prefs.setStringPref(PREF_MODEL, "nonexistent-model");
+    Services.prefs.setStringPref(PREF_MODEL_CHOICE, "0");
 
     const sb = sinon.createSandbox();
     try {
@@ -620,6 +622,12 @@ add_task(async function test_Chat_fetchWithHistory_uses_modelId_from_pref() {
         model: customModelId,
         is_default: true,
       },
+      {
+        feature: MODEL_FEATURES.CHAT,
+        version: getVersionForFeature(MODEL_FEATURES.CHAT),
+        model: "generic",
+        is_default: false,
+      },
     ];
 
     const fakeClient = {
@@ -1088,5 +1096,24 @@ add_task(
     } finally {
       sb.restore();
     }
+  }
+);
+
+add_task(
+  async function test_Chat_executeToolByName_throws_unknownTool_clientReason() {
+    await Assert.rejects(
+      executeToolByName(
+        "no_such_tool",
+        {},
+        "tool-call-id",
+        /* conversation */ null,
+        /* browsingContext */ null,
+        "fullpage",
+        /* engineInstance */ null,
+        0
+      ),
+      err => err.clientReason === "unknownTool",
+      "executeToolByName should reject with clientReason unknownTool"
+    );
   }
 );

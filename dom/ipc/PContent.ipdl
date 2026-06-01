@@ -154,6 +154,7 @@ using mozilla::dom::MediaControlAction from "mozilla/dom/MediaControlKeySource.h
 using mozilla::dom::MediaPlaybackState from "mozilla/dom/MediaPlaybackStatus.h";
 using mozilla::dom::MediaAudibleState from "mozilla/dom/MediaPlaybackStatus.h";
 using mozilla::dom::ControlType from "mozilla/dom/MediaPlaybackStatus.h";
+using mozilla::dom::AudioSessionType from "mozilla/dom/AudioSessionBinding.h";
 using mozilla::dom::MediaMetadataBase from "mozilla/dom/MediaMetadata.h";
 using mozilla::dom::MediaSessionAction from "mozilla/dom/MediaSessionBinding.h";
 using mozilla::dom::MediaSessionPlaybackState from "mozilla/dom/MediaSessionBinding.h";
@@ -1065,7 +1066,8 @@ child:
 
     async HistoryCommitIndexAndLength(MaybeDiscardedBrowsingContext aContext,
                                       uint32_t aIndex, uint32_t aLength,
-                                      nsID aChangeID);
+                                      nsID aChangeID,
+                                      NavigationEntriesTruncation[] aTruncations);
 
     async GetLayoutHistoryState(MaybeDiscardedBrowsingContext aContext)
         returns (nullable nsILayoutHistoryState aState, Wireframe? aWireframe);
@@ -1247,6 +1249,16 @@ parent:
     sync GetClipboard(nsCString[] aTypes, ClipboardType aWhichClipboard,
                       MaybeDiscardedWindowContext aRequestingWindowContext)
         returns (IPCTransferableDataOrError transferableDataOrError);
+
+    // Given a list of supported types, returns the clipboard data for the
+    // first type that matches if the data byte size <= aThreshold.
+    // aRequestingWindowContext is the window that is requesting the clipboard,
+    // which is used for content analysis.
+    async GetClipboardDataIfSmallerThan(nsCString[] aTypes,
+                                        uint64_t aThreshold,
+                                        ClipboardType aWhichClipboard,
+                                        MaybeDiscardedWindowContext aRequestingWindowContext)
+        returns (IPCTransferableDataOrError aResult);
 
     // Requests getting data from clipboard.
     async GetClipboardDataSnapshot(nsCString[] aTypes, ClipboardType aWhichClipboard,
@@ -1680,7 +1692,8 @@ parent:
     */
     async NotifyMediaAudibleChanged(MaybeDiscardedBrowsingContext aContext,
                                     MediaAudibleState aState,
-                                    ControlType aType);
+                                    ControlType aType,
+                                    AudioSessionType aSessionType);
 
    /**
     * When media enabled or disabled the Picture-in-Picture mode, we have to

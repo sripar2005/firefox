@@ -3,11 +3,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use crate::cg;
-use crate::to_css::{CssFieldAttrs, CssInputAttrs, CssVariantAttrs};
-use proc_macro2::TokenStream;
+use crate::to_css::{CssBitflagAttrs, CssFieldAttrs, CssInputAttrs, CssVariantAttrs};
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use quote::ToTokens;
-use syn::{Data, DataEnum, DeriveInput, Fields, Path, WhereClause};
+use quote::{ToTokens, TokenStreamExt};
+use syn::{Data, DataEnum, DeriveInput, Fields, Ident, Path, WhereClause};
 use synstructure::{BindingInfo, Structure};
 
 /// Derive implementation of the `ToTyped` trait.
@@ -28,10 +28,12 @@ use synstructure::{BindingInfo, Structure};
 ///     marked with `skip_derive_fields` return `Err(())` instead.
 ///
 /// * Structs
-///   * Structs are handled similarly to data-carrying variants in mixed enums.
-///     Unless `skip_derive_fields` is set, and as long as the type is not
-///     marked as a bitflags type, `.to_typed()` is generated for their inner
-///     values; otherwise, they return `Err(())`.
+///   * Bitflags structs marked with `#[css(bitflags(...))]` are handled by
+///     deriving keyword reification from their bitflag metadata.
+///
+///   * Other structs are handled similarly to data-carrying variants in mixed
+///     enums. Unless `skip_derive_fields` is set, `.to_typed()` is generated
+///     for their inner values; otherwise, they return `Err(())`.
 ///
 /// Unit variants are mapped to keywords using their Rust identifier converted
 /// via `to_css_identifier`. Attributes like `#[css(keyword = "...")]` will
@@ -45,6 +47,15 @@ use synstructure::{BindingInfo, Structure};
 /// incrementally as Typed OM support expands.
 ///
 /// Summary of derive attributes recognized by this derive:
+///
+/// * `#[css(bitflags(single = "...", mixed = "...", overlapping_bits))]` on a
+///   struct generates keyword reification for CSS bitflags types. Values that
+///   can be represented as a single CSS keyword are reified as
+///   `TypedValue::Keyword`; values that would serialize to multiple CSS
+///   keywords are treated as unsupported and return `Err(())`.
+///
+///   `overlapping_bits` is supported for bitflags where one keyword subsumes
+///   other internal bits, such as `contain: size`.
 ///
 /// * `#[typed(skip_derive_fields)]` on the type disables field recursion for
 ///   structs and data-carrying enum variants.
@@ -103,6 +114,18 @@ pub fn derive(mut input: DeriveInput) -> TokenStream {
 
     let input_attrs = cg::parse_input_attrs::<TypedInputAttrs>(&input);
 
+    if matches!(input.data, Data::Enum(..)) || css_input_attrs.bitflags.is_some() {
+        assert!(
+            !css_input_attrs.comma,
+            "#[css(comma)] is not allowed on enums or bitflags"
+        );
+    }
+
+    if let Some(ref bitflags) = css_input_attrs.bitflags {
+        assert!(where_clause.is_none(), "Generic bitflags?");
+        return derive_bitflags(&input, bitflags);
+    }
+
     let body = match &input.data {
         // Handle enums.
         Data::Enum(DataEnum { variants, .. }) => {
@@ -115,9 +138,9 @@ pub fn derive(mut input: DeriveInput) -> TokenStream {
                 // generating a full match. This avoids code bloat while
                 // producing the same runtime behavior.
                 quote! {
-                    fn to_typed(&self, dest: &mut thin_vec::ThinVec<style_traits::TypedValue>) -> Result<(), ()> {
+                    fn to_typed(&self, dest: &mut thin_vec::ThinVec<crate::typed_om::TypedValue>) -> Result<(), ()> {
                       let s = style_traits::ToCss::to_css_cssstring(self);
-                      dest.push(style_traits::TypedValue::Keyword(style_traits::KeywordValue(s)));
+                      dest.push(crate::typed_om::TypedValue::Keyword(crate::typed_om::KeywordValue(s)));
                       Ok(())
                     }
                 }
@@ -136,7 +159,7 @@ pub fn derive(mut input: DeriveInput) -> TokenStream {
                 });
 
                 quote! {
-                    fn to_typed(&self, dest: &mut thin_vec::ThinVec<style_traits::TypedValue>) -> Result<(), ()> {
+                    fn to_typed(&self, dest: &mut thin_vec::ThinVec<crate::typed_om::TypedValue>) -> Result<(), ()> {
                         match *self {
                             #match_body
                         }
@@ -158,7 +181,7 @@ pub fn derive(mut input: DeriveInput) -> TokenStream {
                 });
 
                 quote! {
-                    fn to_typed(&self, dest: &mut thin_vec::ThinVec<style_traits::TypedValue>) -> Result<(), ()> {
+                    fn to_typed(&self, dest: &mut thin_vec::ThinVec<crate::typed_om::TypedValue>) -> Result<(), ()> {
                         match *self {
                             #match_body
                         }
@@ -183,8 +206,96 @@ pub fn derive(mut input: DeriveInput) -> TokenStream {
 
     // Put it all together into the impl block.
     quote! {
-        impl #impl_generics style_traits::ToTyped for #name #ty_generics #where_clause {
+        impl #impl_generics crate::typed_om::ToTyped for #name #ty_generics #where_clause {
             #body
+        }
+    }
+}
+
+/// Derive a `ToTyped` implementation for CSS bitflags types.
+///
+/// This mirrors the `ToCss` bitflags metadata, but with stricter output:
+/// Typed OM reification can only produce one `TypedValue::Keyword`. Mixed
+/// values that would serialize to multiple keywords return `Err(())`.
+///
+/// `overlapping_bits` needs special handling because some keywords are stored
+/// as combinations of lower-level bits. For example, `contain: size` also
+/// contains the `inline-size` bit internally. The generated code tracks
+/// consumed flags so such values still reify to `"size"` rather than being
+/// rejected as multi-keyword values.
+fn derive_bitflags(input: &syn::DeriveInput, bitflags: &CssBitflagAttrs) -> TokenStream {
+    let name = &input.ident;
+    let mut body = TokenStream::new();
+
+    for (rust_name, css_name) in bitflags.single_flags() {
+        let rust_ident = Ident::new(&rust_name, Span::call_site());
+        body.append_all(quote! {
+            if *self == Self::#rust_ident {
+                dest.push(crate::typed_om::TypedValue::Keyword(
+                    crate::typed_om::KeywordValue(style_traits::CssString::from(#css_name)),
+                ));
+                return Ok(());
+            }
+        });
+    }
+
+    body.append_all(quote! {
+        let mut flag: Option<&'static str> = None;
+    });
+
+    if bitflags.overlapping_bits {
+        // Track already-consumed flags so overlapping serialized keywords
+        // such as `contain: size` are not mistaken for multi-keyword values.
+        body.append_all(quote! {
+            let mut serialized = Self::empty();
+        });
+    }
+
+    for (rust_name, css_name) in bitflags.mixed_flags() {
+        let rust_ident = Ident::new(&rust_name, Span::call_site());
+        let init_flag = quote! {
+            if flag.is_some() {
+                return Err(());
+            }
+            flag = Some(#css_name);
+        };
+        if bitflags.overlapping_bits {
+            body.append_all(quote! {
+                if self.contains(Self::#rust_ident) && !serialized.intersects(Self::#rust_ident) {
+                    #init_flag
+                    serialized.insert(Self::#rust_ident);
+                }
+            });
+        } else {
+            body.append_all(quote! {
+                if self.intersects(Self::#rust_ident) {
+                    #init_flag
+                }
+            });
+        }
+    }
+
+    body.append_all(quote! {
+        let Some(flag) = flag else {
+            return Err(());
+        };
+
+        dest.push(crate::typed_om::TypedValue::Keyword(
+            crate::typed_om::KeywordValue(style_traits::CssString::from(flag)),
+        ));
+        Ok(())
+    });
+
+    quote! {
+        impl crate::typed_om::ToTyped for #name {
+            #[allow(unused_variables)]
+            #[inline]
+            fn to_typed(
+                &self,
+                dest: &mut thin_vec::ThinVec<crate::typed_om::TypedValue>,
+            ) -> Result<(), ()> {
+                #body
+            }
         }
     }
 }
@@ -246,8 +357,8 @@ fn derive_variant_arm(
 
         // Emit code to wrap this keyword into a TypedValue.
         quote! {
-            dest.push(style_traits::TypedValue::Keyword(
-                style_traits::KeywordValue(style_traits::CssString::from(#keyword))
+            dest.push(crate::typed_om::TypedValue::Keyword(
+                crate::typed_om::KeywordValue(style_traits::CssString::from(#keyword))
             ));
             Ok(())
         }
@@ -382,26 +493,29 @@ fn derive_single_field_expr(
         //
         // See also the comment in the beginning of the main `derive` fn.
         for item_ty in field_generic_arguments(field) {
-            cg::add_predicate(where_clause, parse_quote!(#item_ty: style_traits::ToTyped));
+            cg::add_predicate(
+                where_clause,
+                parse_quote!(#item_ty: crate::typed_om::ToTyped),
+            );
         }
 
         if let Some(if_empty) = css_field_attrs.if_empty {
             quote! {
                 let mut iter = #field.iter().peekable();
                 if iter.peek().is_none() {
-                    dest.push(style_traits::TypedValue::Keyword(
-                        style_traits::KeywordValue(style_traits::CssString::from(#if_empty)),
+                    dest.push(crate::typed_om::TypedValue::Keyword(
+                        crate::typed_om::KeywordValue(style_traits::CssString::from(#if_empty)),
                     ));
                 } else {
                     for item in iter {
-                        style_traits::ToTyped::to_typed(&item, dest)?;
+                        crate::typed_om::ToTyped::to_typed(&item, dest)?;
                     }
                 }
             }
         } else {
             quote! {
                 for item in #field.iter() {
-                    style_traits::ToTyped::to_typed(&item, dest)?;
+                    crate::typed_om::ToTyped::to_typed(&item, dest)?;
                 }
             }
         }
@@ -414,8 +528,8 @@ fn derive_single_field_expr(
         let ident = cg::to_css_identifier(&ident.to_string()).replace("_", "-");
         quote! {
             if *#field {
-                dest.push(style_traits::TypedValue::Keyword(
-                    style_traits::KeywordValue(style_traits::CssString::from(#ident)),
+                dest.push(crate::typed_om::TypedValue::Keyword(
+                    crate::typed_om::KeywordValue(style_traits::CssString::from(#ident)),
                 ));
             }
         }
@@ -424,10 +538,10 @@ fn derive_single_field_expr(
         // the required conversion, and emit a call to its `.to_typed()`
         // method.
         let ty = &field.ast().ty;
-        cg::add_predicate(where_clause, parse_quote!(#ty: style_traits::ToTyped));
+        cg::add_predicate(where_clause, parse_quote!(#ty: crate::typed_om::ToTyped));
 
         quote! {
-           style_traits::ToTyped::to_typed(#field, dest)?;
+           crate::typed_om::ToTyped::to_typed(#field, dest)?;
         }
     };
 

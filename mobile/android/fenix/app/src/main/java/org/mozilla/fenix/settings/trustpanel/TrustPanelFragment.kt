@@ -59,7 +59,9 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.components
 import org.mozilla.fenix.components.menu.IPProtectionMenuBinding
 import org.mozilla.fenix.components.menu.compose.MenuDialogBottomSheet
+import org.mozilla.fenix.components.menu.store.IPProtectionMenuStatus
 import org.mozilla.fenix.ext.requireComponents
+import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.settings.PhoneFeature
 import org.mozilla.fenix.settings.trustpanel.middleware.TrustPanelMiddleware
 import org.mozilla.fenix.settings.trustpanel.middleware.TrustPanelNavigationMiddleware
@@ -148,18 +150,20 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
         (super.onCreateDialog(savedInstanceState) as BottomSheetDialog).apply {
             setOnShowListener {
-                val bottomSheet = findViewById<FrameLayout>(materialR.id.design_bottom_sheet)
-                bottomSheet?.let {
-                    ViewCompat.setOnApplyWindowInsetsListener(it) { view, insets ->
-                        val systemBarInsets = insets.getInsets(systemBars())
-                        view.setPadding(0, systemBarInsets.top, 0, systemBarInsets.bottom)
-                        insets
+                runIfFragmentIsAttached {
+                    val bottomSheet = findViewById<FrameLayout>(materialR.id.design_bottom_sheet)
+                    bottomSheet?.let {
+                        ViewCompat.setOnApplyWindowInsetsListener(it) { view, insets ->
+                            val systemBarInsets = insets.getInsets(systemBars())
+                            view.setPadding(0, systemBarInsets.top, 0, systemBarInsets.bottom)
+                            insets
+                        }
                     }
-                }
-                bottomSheet?.setBackgroundResource(R.drawable.bottom_sheet_with_top_rounded_corners)
+                    bottomSheet?.setBackgroundResource(R.drawable.bottom_sheet_with_top_rounded_corners)
 
-                behavior.peekHeight = resources.displayMetrics.heightPixels
-                behavior.state = BottomSheetBehavior.STATE_EXPANDED
+                    behavior.peekHeight = context.resources.displayMetrics.heightPixels
+                    behavior.state = BottomSheetBehavior.STATE_EXPANDED
+                }
             }
         }
 
@@ -312,7 +316,11 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                                     store.dispatch(TrustPanelAction.Navigate.QWAC)
                                 },
                                 onIPProtectionToggle = {
-                                    requireComponents.ipProtection.store.dispatch(IPProtectionAction.Toggle)
+                                    if (ipProtectionMenuState.status == IPProtectionMenuStatus.AuthRequired) {
+                                        store.dispatch(TrustPanelAction.Navigate.IPProtectionSettings)
+                                    } else {
+                                        components.ipProtection.store.dispatch(IPProtectionAction.Toggle)
+                                    }
                                 },
                                 onIPProtectionNavigate = {
                                     store.dispatch(TrustPanelAction.Navigate.IPProtectionSettings)

@@ -6294,32 +6294,38 @@ nsresult EditorBase::OnFocus(const nsINode& aOriginalEventTargetNode) {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
   InitializeSelection(aOriginalEventTargetNode);
+  MOZ_ASSERT(CanKeepHandlingFocusEvent(aOriginalEventTargetNode),
+             "Selection listeners shouldn't change the focus");
+  return NS_OK;
+}
+
+void EditorBase::PostHandleFocusEvent(const nsINode& aFocusEventTargetNode) {
+  if (!CanKeepHandlingFocusEvent(aFocusEventTargetNode)) [[unlikely]] {
+    return;
+  }
+
   mSpellCheckerDictionaryUpdated = false;
   if (mInlineSpellChecker && CanEnableSpellCheck()) {
     DebugOnly<nsresult> rvIgnored =
         mInlineSpellChecker->UpdateCurrentDictionary();
     NS_WARNING_ASSERTION(
         NS_SUCCEEDED(rvIgnored),
-        "mozInlineSpellCHecker::UpdateCurrentDictionary() failed, but ignored");
+        "mozInlineSpellChecker::UpdateCurrentDictionary() failed, but ignored");
     mSpellCheckerDictionaryUpdated = true;
   }
-  // XXX Why don't we stop handling focus with the spell checker immediately
-  //     after calling InitializeSelection?
-  if (MOZ_UNLIKELY(!CanKeepHandlingFocusEvent(aOriginalEventTargetNode))) {
-    return NS_ERROR_EDITOR_DESTROYED;
+  if (!CanKeepHandlingFocusEvent(aFocusEventTargetNode)) [[unlikely]] {
+    return;
   }
 
   const RefPtr<Element> focusedElement = GetFocusedElement();
-  RefPtr<nsPresContext> presContext =
+  const RefPtr<nsPresContext> presContext =
       focusedElement ? focusedElement->GetPresContext(
                            Element::PresContextFor::eForComposedDoc)
                      : GetPresContext();
   if (NS_WARN_IF(!presContext)) {
-    return NS_ERROR_FAILURE;
+    return;
   }
   IMEStateManager::OnFocusInEditor(*presContext, focusedElement, *this);
-
-  return NS_OK;
 }
 
 void EditorBase::HideCaret(bool aHide) {
@@ -6851,6 +6857,15 @@ void EditorBase::AutoEditActionDataSetter::UpdateSelectionCache(
   if (mEditorBase.mUpdateCount) {
     aSelection.StartBatchChanges(__FUNCTION__);
   }
+}
+
+LimitersAndCaretData
+EditorBase::AutoEditActionDataSetter::SelectionLimitersAndCaretData() const {
+  if (nsFrameSelection* const frameSelection =
+          SelectionRef().GetFrameSelection()) {
+    return LimitersAndCaretData{*frameSelection};
+  }
+  return {};
 }
 
 void EditorBase::AutoEditActionDataSetter::SetColorData(
@@ -7661,4 +7676,10 @@ nsresult EditorBase::GetDataFromDataTransferOrClipboard(
   }
   return NS_OK;
 }
+
+LimitersAndCaretData EditorBase::SelectionLimitersAndCaretData() const {
+  MOZ_ASSERT(mEditActionData);
+  return mEditActionData->SelectionLimitersAndCaretData();
+}
+
 }  // namespace mozilla

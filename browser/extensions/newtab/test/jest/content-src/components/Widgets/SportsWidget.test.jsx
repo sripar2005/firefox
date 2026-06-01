@@ -8,6 +8,18 @@ import { actionTypes as at } from "common/Actions.mjs";
 import { WrapWithProvider } from "test/jest/test-utils";
 import { SportsWidget } from "content-src/components/Widgets/SportsWidget/SportsWidget";
 
+// Pin Date.now() to a post-kickoff timestamp for the entire suite so the
+// kickoff-date guard on /live data does not zero out the mock live matches
+// used by these tests.
+const POST_KICKOFF_MS = Date.UTC(2026, 5, 12, 0, 0, 0);
+let dateNowSpy;
+beforeAll(() => {
+  dateNowSpy = jest.spyOn(Date, "now").mockReturnValue(POST_KICKOFF_MS);
+});
+afterAll(() => {
+  dateNowSpy.mockRestore();
+});
+
 const mockTeams = [
   { key: "CAN", name: "Canada" },
   { key: "AUS", name: "Australia" },
@@ -217,6 +229,34 @@ describe("<SportsWidget>", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders the intro video pointing at the size-matched webm", () => {
+    const mediumResult = render(
+      <WrapWithProvider state={makeState()}>
+        <SportsWidget {...defaultProps} />
+      </WrapWithProvider>
+    );
+    expect(
+      mediumResult.container.querySelector(".sports-intro-video")
+    ).toHaveAttribute(
+      "src",
+      "chrome://newtab/content/data/content/assets/worldcup-medium.webm"
+    );
+
+    const largeResult = render(
+      <WrapWithProvider
+        state={makeState({ [PREF_SPORTS_WIDGET_SIZE]: "large" })}
+      >
+        <SportsWidget {...defaultProps} />
+      </WrapWithProvider>
+    );
+    expect(
+      largeResult.container.querySelector(".sports-intro-video")
+    ).toHaveAttribute(
+      "src",
+      "chrome://newtab/content/data/content/assets/worldcup-large.webm"
+    );
+  });
+
   it("should show the keep-tabs title", () => {
     const { container } = render(
       <WrapWithProvider state={makeState()}>
@@ -279,7 +319,8 @@ describe("<SportsWidget>", () => {
           {
             data: {
               teams: [],
-              matches: { current: [mockMatch], previous: [], next: [] },
+              matches: emptyMatches,
+              live: [mockMatch],
             },
           }
         )}
@@ -293,6 +334,46 @@ describe("<SportsWidget>", () => {
     expect(
       container.querySelector(".sports-intro-wrapper")
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("pre-kickoff /live data guard", () => {
+  // One second before WORLD_CUP_KICKOFF_MS (2026-06-11T19:00:00Z).
+  const PRE_KICKOFF_MS = Date.UTC(2026, 5, 11, 18, 59, 59);
+
+  beforeEach(() => {
+    dateNowSpy.mockReturnValue(PRE_KICKOFF_MS);
+  });
+
+  afterEach(() => {
+    dateNowSpy.mockReturnValue(POST_KICKOFF_MS);
+  });
+
+  it("ignores non-empty /live data and stays on the intro view", () => {
+    const { container } = render(
+      <WrapWithProvider
+        state={makeState(
+          {},
+          {
+            data: {
+              teams: [],
+              matches: emptyMatches,
+              live: [mockMatch],
+            },
+          }
+        )}
+      >
+        <SportsWidget {...defaultProps} />
+      </WrapWithProvider>
+    );
+    // Guard fires: hasLiveGames is false despite non-empty data.live,
+    // so tournamentStarted stays false and the widget stays on intro.
+    expect(
+      container.querySelector(".sports.sports-matches")
+    ).not.toBeInTheDocument();
+    expect(
+      container.querySelector(".sports-intro-wrapper")
+    ).toBeInTheDocument();
   });
 });
 
@@ -952,7 +1033,8 @@ describe("<SportsWidget> matches view", () => {
     const { container } = renderInMatchesState({
       data: {
         teams: [],
-        matches: { current: [mockMatch], previous: [], next: [] },
+        matches: emptyMatches,
+        live: [mockMatch],
       },
     });
     expect(
@@ -969,12 +1051,58 @@ describe("<SportsWidget> matches view", () => {
     const { container: withLive } = renderInMatchesState({
       data: {
         teams: [],
-        matches: { current: [mockMatch], previous: [], next: [] },
+        matches: emptyMatches,
+        live: [mockMatch],
       },
     });
     expect(
       withLive.querySelector("[data-l10n-id='newtab-sports-widget-now']")
     ).toBeInTheDocument();
+  });
+
+  it("ignores matches.current when deciding whether to show the Now tab", () => {
+    // Now-tab visibility must be driven by /live, not by /matches.current.
+    // The /matches `current[]` bucket is calendar-date-bucketed by the
+    // backend and includes live + final games for the requested day, so
+    // it's not a valid signal for "currently in progress".
+    const { container } = renderInMatchesState({
+      data: {
+        teams: [],
+        matches: { current: [mockMatch], previous: [], next: [] },
+        live: [],
+      },
+    });
+    expect(
+      container.querySelector("[data-l10n-id='newtab-sports-widget-now']")
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the Now highlight from data.live, not from matches.current", () => {
+    // Verifies the Now tab reads from data.live by giving each source a
+    // distinguishable team key and asserting the live team renders.
+    const liveOnly = {
+      ...mockMatch,
+      home_team: { ...mockMatch.home_team, key: "GER", name: "Germany" },
+      away_team: { ...mockMatch.away_team, key: "FRA", name: "France" },
+    };
+    const matchesCurrentOnly = {
+      ...mockMatch,
+      home_team: { ...mockMatch.home_team, key: "BRA", name: "Brazil" },
+      away_team: { ...mockMatch.away_team, key: "ARG", name: "Argentina" },
+    };
+    const { container } = renderInMatchesState({
+      matchesTab: "now",
+      data: {
+        teams: [],
+        matches: { current: [matchesCurrentOnly], previous: [], next: [] },
+        live: [liveOnly],
+      },
+    });
+    const panel = getVisibleTabPanel(container);
+    const flags = panel.querySelectorAll(".sports-match-flag");
+    const titles = [...flags].map(f => f.getAttribute("title"));
+    expect(titles).toEqual(expect.arrayContaining(["Germany", "France"]));
+    expect(titles).not.toEqual(expect.arrayContaining(["Brazil"]));
   });
 
   it("marks the active tab based on matchesTab state", () => {
@@ -990,7 +1118,8 @@ describe("<SportsWidget> matches view", () => {
       matchesTab: "upcoming",
       data: {
         teams: [],
-        matches: { current: [mockMatch], previous: [], next: [] },
+        matches: emptyMatches,
+        live: [mockMatch],
       },
     });
     expect(
@@ -1114,7 +1243,8 @@ describe("<SportsWidget> matches view", () => {
       matchesTab: "upcoming",
       data: {
         teams: [],
-        matches: { current: [mockMatch], previous: [], next: [] },
+        matches: emptyMatches,
+        live: [mockMatch],
       },
     });
     fireEvent.click(
@@ -1322,6 +1452,259 @@ describe("<SportsWidget> Results tab View all button", () => {
   });
 });
 
+describe("<SportsWidget> match list view expands widget to large", () => {
+  // When the user clicks "View all" on the Results or Upcoming tab, the
+  // widget should switch to the large size — even if the user's chosen
+  // size pref is "medium" — and revert back to medium when they collapse
+  // the list. The pref itself must not change; this is a temporary visual
+  // override, mirroring how the FOLLOW_TEAMS state already forces large.
+  function renderResultsAtSize(widgetSize) {
+    return render(
+      <WrapWithProvider
+        state={makeState(
+          { [PREF_SPORTS_WIDGET_SIZE]: widgetSize },
+          {
+            widgetState: "sports-matches",
+            matchesTab: "results",
+            data: {
+              teams: [],
+              matches: {
+                previous: [
+                  mockMatch,
+                  {
+                    ...mockMatch,
+                    date: "2026-05-09T14:00:00+00:00",
+                    home_score: 2,
+                  },
+                ],
+                current: [],
+                next: [],
+              },
+            },
+          }
+        )}
+      >
+        <SportsWidget dispatch={jest.fn()} handleUserInteraction={jest.fn()} />
+      </WrapWithProvider>
+    );
+  }
+
+  function renderUpcomingAtSize(widgetSize) {
+    return render(
+      <WrapWithProvider
+        state={makeState(
+          { [PREF_SPORTS_WIDGET_SIZE]: widgetSize },
+          {
+            widgetState: "sports-matches",
+            matchesTab: "upcoming",
+            data: {
+              teams: [],
+              matches: {
+                // A `previous` entry keeps tournamentStarted truthy so the
+                // widget stays in the matches view.
+                previous: [mockMatch],
+                current: [],
+                next: [
+                  { ...mockMatch, status_type: "scheduled" },
+                  {
+                    ...mockMatch,
+                    date: "2026-05-10T14:00:00+00:00",
+                    status_type: "scheduled",
+                    home_score: null,
+                  },
+                ],
+              },
+            },
+          }
+        )}
+      >
+        <SportsWidget dispatch={jest.fn()} handleUserInteraction={jest.fn()} />
+      </WrapWithProvider>
+    );
+  }
+
+  function getVisibleViewAllButton(container) {
+    return getVisibleTabPanel(container)?.querySelector(
+      "[data-l10n-id='newtab-sports-widget-view-all']"
+    );
+  }
+
+  function getVisibleShowLessButton(container) {
+    return getVisibleTabPanel(container)?.querySelector(
+      "[data-l10n-id='newtab-sports-widget-show-less']"
+    );
+  }
+
+  it("switches the medium widget to large when View all is clicked on Results", () => {
+    const { container } = renderResultsAtSize("medium");
+    // Sanity check: starts as medium.
+    expect(
+      container.querySelector(".sports.medium-widget")
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(".sports.large-widget")
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(getVisibleViewAllButton(container));
+
+    expect(container.querySelector(".sports.large-widget")).toBeInTheDocument();
+    expect(
+      container.querySelector(".sports.medium-widget")
+    ).not.toBeInTheDocument();
+  });
+
+  it("reverts back to medium when Show less is clicked on Results", () => {
+    const { container } = renderResultsAtSize("medium");
+    fireEvent.click(getVisibleViewAllButton(container));
+    // Sanity check: now large after expanding.
+    expect(container.querySelector(".sports.large-widget")).toBeInTheDocument();
+
+    fireEvent.click(getVisibleShowLessButton(container));
+
+    expect(
+      container.querySelector(".sports.medium-widget")
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(".sports.large-widget")
+    ).not.toBeInTheDocument();
+  });
+
+  it("switches the medium widget to large when View all is clicked on Upcoming", () => {
+    const { container } = renderUpcomingAtSize("medium");
+    expect(
+      container.querySelector(".sports.medium-widget")
+    ).toBeInTheDocument();
+
+    fireEvent.click(getVisibleViewAllButton(container));
+
+    expect(container.querySelector(".sports.large-widget")).toBeInTheDocument();
+    expect(
+      container.querySelector(".sports.medium-widget")
+    ).not.toBeInTheDocument();
+  });
+
+  it("reverts back to medium when Show less is clicked on Upcoming", () => {
+    const { container } = renderUpcomingAtSize("medium");
+    fireEvent.click(getVisibleViewAllButton(container));
+    expect(container.querySelector(".sports.large-widget")).toBeInTheDocument();
+
+    fireEvent.click(getVisibleShowLessButton(container));
+
+    expect(
+      container.querySelector(".sports.medium-widget")
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(".sports.large-widget")
+    ).not.toBeInTheDocument();
+  });
+
+  it("stays large when View all is clicked on Results and the widget is already large", () => {
+    const { container } = renderResultsAtSize("large");
+    expect(container.querySelector(".sports.large-widget")).toBeInTheDocument();
+
+    fireEvent.click(getVisibleViewAllButton(container));
+
+    expect(container.querySelector(".sports.large-widget")).toBeInTheDocument();
+    expect(
+      container.querySelector(".sports.medium-widget")
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not dispatch SET_PREF when expanding the list view", () => {
+    // The widget size pref must be left untouched — the large size while
+    // the list is open is a temporary visual override only.
+    const dispatch = jest.fn();
+    const { container } = render(
+      <WrapWithProvider
+        state={makeState(
+          { [PREF_SPORTS_WIDGET_SIZE]: "medium" },
+          {
+            widgetState: "sports-matches",
+            matchesTab: "results",
+            data: {
+              teams: [],
+              matches: {
+                previous: [mockMatch],
+                current: [],
+                next: [],
+              },
+            },
+          }
+        )}
+      >
+        <SportsWidget dispatch={dispatch} handleUserInteraction={jest.fn()} />
+      </WrapWithProvider>
+    );
+
+    fireEvent.click(getVisibleViewAllButton(container));
+
+    const setPrefCalls = dispatch.mock.calls.filter(
+      ([action]) =>
+        action?.type === at.SET_PREF &&
+        action?.data?.name === PREF_SPORTS_WIDGET_SIZE
+    );
+    expect(setPrefCalls).toHaveLength(0);
+  });
+
+  it("keeps medium when Results list is expanded but the Upcoming tab is active", () => {
+    // showResultsList persists across tab changes, but the widget should
+    // only render large while the *active* tab's list is the one expanded.
+    // The CHANGE_MATCHES_TAB action goes through the main process in real
+    // code, so to simulate the post-round-trip state here we rerender with
+    // a fresh store where matchesTab is "upcoming". React preserves the
+    // SportsWidget component instance across rerenders, which means the
+    // showResultsList local state remains true.
+    const matchesData = {
+      teams: [],
+      matches: {
+        previous: [mockMatch],
+        current: [],
+        next: [{ ...mockMatch, status_type: "scheduled" }],
+      },
+    };
+    const { container, rerender } = render(
+      <WrapWithProvider
+        state={makeState(
+          { [PREF_SPORTS_WIDGET_SIZE]: "medium" },
+          {
+            widgetState: "sports-matches",
+            matchesTab: "results",
+            data: matchesData,
+          }
+        )}
+      >
+        <SportsWidget dispatch={jest.fn()} handleUserInteraction={jest.fn()} />
+      </WrapWithProvider>
+    );
+
+    // Expand Results -> widget becomes large.
+    fireEvent.click(getVisibleViewAllButton(container));
+    expect(container.querySelector(".sports.large-widget")).toBeInTheDocument();
+
+    rerender(
+      <WrapWithProvider
+        state={makeState(
+          { [PREF_SPORTS_WIDGET_SIZE]: "medium" },
+          {
+            widgetState: "sports-matches",
+            matchesTab: "upcoming",
+            data: matchesData,
+          }
+        )}
+      >
+        <SportsWidget dispatch={jest.fn()} handleUserInteraction={jest.fn()} />
+      </WrapWithProvider>
+    );
+
+    expect(
+      container.querySelector(".sports.medium-widget")
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(".sports.large-widget")
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("<SportsWidget> Watch button (live tab)", () => {
   // The Watch button on the live tab swaps between an icon-only variant
   // (medium widget) and a labelled variant (large widget). The two cases
@@ -1338,7 +1721,8 @@ describe("<SportsWidget> Watch button (live tab)", () => {
             matchesTab: "now",
             data: {
               teams: [],
-              matches: { previous: [], current: [mockMatch], next: [] },
+              matches: emptyMatches,
+              live: [mockMatch],
             },
           }
         )}
@@ -2019,6 +2403,119 @@ describe("<SportsWidget> telemetry", () => {
     );
   });
 
+  it("switches to upcoming when the View upcoming context menu item is clicked even with live games present", () => {
+    const sportsWithLive = {
+      widgetState: "sports-matches",
+      matchesTab: "results",
+      data: {
+        teams: [],
+        matches: { current: [], previous: [mockMatch], next: [] },
+        live: [mockMatch],
+      },
+    };
+    const { container, rerender } = render(
+      <WrapWithProvider state={makeState({}, sportsWithLive)}>
+        <SportsWidget
+          dispatch={dispatch}
+          handleUserInteraction={handleUserInteraction}
+        />
+      </WrapWithProvider>
+    );
+
+    // While live games are present, the widget auto-activates Now regardless
+    // of the persisted matchesTab.
+    expect(
+      container
+        .querySelector(".sports-matches-tab.is-active")
+        .getAttribute("data-l10n-id")
+    ).toBe("newtab-sports-widget-now");
+
+    fireEvent.click(
+      container.querySelector(
+        "[data-l10n-id='newtab-sports-widget-menu-view-upcoming']"
+      )
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: at.WIDGETS_SPORTS_CHANGE_MATCHES_TAB,
+        data: "upcoming",
+      })
+    );
+
+    // Simulate the dispatch reaching redux. Without the auto-override being
+    // suppressed by the user's explicit menu choice, the active tab would
+    // remain pinned to Now here.
+    rerender(
+      <WrapWithProvider
+        state={makeState({}, { ...sportsWithLive, matchesTab: "upcoming" })}
+      >
+        <SportsWidget
+          dispatch={dispatch}
+          handleUserInteraction={handleUserInteraction}
+        />
+      </WrapWithProvider>
+    );
+    expect(
+      container
+        .querySelector(".sports-matches-tab.is-active")
+        .getAttribute("data-l10n-id")
+    ).toBe("newtab-sports-widget-upcoming");
+  });
+
+  it("switches to results when the View results context menu item is clicked even with live games present", () => {
+    const sportsWithLive = {
+      widgetState: "sports-matches",
+      matchesTab: "upcoming",
+      data: {
+        teams: [],
+        matches: { current: [], previous: [mockMatch], next: [] },
+        live: [mockMatch],
+      },
+    };
+    const { container, rerender } = render(
+      <WrapWithProvider state={makeState({}, sportsWithLive)}>
+        <SportsWidget
+          dispatch={dispatch}
+          handleUserInteraction={handleUserInteraction}
+        />
+      </WrapWithProvider>
+    );
+
+    expect(
+      container
+        .querySelector(".sports-matches-tab.is-active")
+        .getAttribute("data-l10n-id")
+    ).toBe("newtab-sports-widget-now");
+
+    fireEvent.click(
+      container.querySelector(
+        "[data-l10n-id='newtab-sports-widget-menu-view-results']"
+      )
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: at.WIDGETS_SPORTS_CHANGE_MATCHES_TAB,
+        data: "results",
+      })
+    );
+
+    rerender(
+      <WrapWithProvider
+        state={makeState({}, { ...sportsWithLive, matchesTab: "results" })}
+      >
+        <SportsWidget
+          dispatch={dispatch}
+          handleUserInteraction={handleUserInteraction}
+        />
+      </WrapWithProvider>
+    );
+    expect(
+      container
+        .querySelector(".sports-matches-tab.is-active")
+        .getAttribute("data-l10n-id")
+    ).toBe("newtab-sports-widget-results");
+  });
+
   it("should dispatch view_matches telemetry with key_dates_state source when View matches is clicked from key dates", () => {
     const { container } = render(
       <WrapWithProvider
@@ -2064,6 +2561,10 @@ describe("<SportsWidget> telemetry", () => {
 });
 
 describe("<SportsWidget> stage section labels in highlight views", () => {
+  // `current` here is the conceptual "live" bucket — it's wired into
+  // `data.live` so the Now-tab section label tests below exercise the live
+  // feed instead of the /matches `current[]` bucket (which no longer drives
+  // the Now tab in production).
   function renderInMatchesState({
     matchesTab,
     size = "large",
@@ -2080,7 +2581,8 @@ describe("<SportsWidget> stage section labels in highlight views", () => {
             matchesTab,
             data: {
               teams: [],
-              matches: { previous, current, next },
+              matches: { previous, current: [], next },
+              live: current,
             },
           }
         )}
@@ -2322,5 +2824,298 @@ describe("<SportsWidget> list-view grouped sections", () => {
     const panel = getVisibleTabPanel(container);
     expandList(panel);
     expect(panel.querySelector(".sports-section-label-live")).toBeNull();
+  });
+});
+
+describe("<SportsWidget> live polling visibility", () => {
+  const PREF_SPORTS_WIDGET_LIVE_ENABLED = "widgets.sportsWidget.live.enabled";
+
+  // The IntersectionObserver we wire up records every constructed instance so
+  // tests can grab its callback and simulate enter/leave from JSDOM, which
+  // doesn't actually fire intersection events.
+  let observerInstances;
+  let originalIntersectionObserver;
+
+  beforeEach(() => {
+    observerInstances = [];
+    originalIntersectionObserver = global.IntersectionObserver;
+    global.IntersectionObserver = class MockIntersectionObserver {
+      constructor(callback, options) {
+        this.callback = callback;
+        this.options = options;
+        this.observed = [];
+        this.disconnected = false;
+        observerInstances.push(this);
+      }
+      observe(el) {
+        this.observed.push(el);
+      }
+      unobserve(el) {
+        this.observed = this.observed.filter(e => e !== el);
+      }
+      disconnect() {
+        this.disconnected = true;
+      }
+    };
+  });
+
+  // Both observers (the existing one-shot impression observer and the new
+  // live-polling observer) use threshold 0.3. They're distinguished by the
+  // order their useEffects run — the impression hook's effect is declared
+  // first in the component, so observerInstances[0] is impression and
+  // observerInstances[1] is the live observer.
+  function findLiveObserver() {
+    return observerInstances[1];
+  }
+
+  afterEach(() => {
+    global.IntersectionObserver = originalIntersectionObserver;
+  });
+
+  function renderWithLive(liveEnabled, dispatch = jest.fn()) {
+    const state = makeState({
+      [PREF_SPORTS_WIDGET_LIVE_ENABLED]: liveEnabled,
+    });
+    const result = render(
+      <WrapWithProvider state={state}>
+        <SportsWidget dispatch={dispatch} handleUserInteraction={jest.fn()} />
+      </WrapWithProvider>
+    );
+    return { ...result, dispatch };
+  }
+
+  it("does not attach a live visibility observer when liveEnabled is false", () => {
+    renderWithLive(false);
+    // The impression observer is always attached; the live observer
+    // (constructed second by useEffect order) should be absent here.
+    expect(findLiveObserver()).toBeUndefined();
+  });
+
+  // Regression: SportsFeed.liveEnabled accepts trainhopConfig.sports.liveEnabled
+  // as a Nimbus rollout signal. Until this fix the component only read the
+  // raw pref, so a Nimbus-only enable started the feed's polling but never
+  // attached the IntersectionObserver — visibleTabs stayed empty and tick()
+  // bailed forever.
+  it("attaches the live visibility observer when only trainhopConfig enables live", () => {
+    const state = makeState({
+      [PREF_SPORTS_WIDGET_LIVE_ENABLED]: false,
+      trainhopConfig: { sports: { liveEnabled: true } },
+    });
+    render(
+      <WrapWithProvider state={state}>
+        <SportsWidget dispatch={jest.fn()} handleUserInteraction={jest.fn()} />
+      </WrapWithProvider>
+    );
+    expect(findLiveObserver()).toBeDefined();
+  });
+
+  it("dispatches WIDGETS_SPORTS_LIVE_VISIBLE on intersect when liveEnabled", () => {
+    const { dispatch } = renderWithLive(true);
+    // Find the observer attached to the widget article (the live one — it
+    // observes the same element the impression observer observes).
+    const liveObserver = findLiveObserver();
+    expect(liveObserver).toBeDefined();
+    act(() => {
+      liveObserver.callback([{ isIntersecting: true }]);
+    });
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: at.WIDGETS_SPORTS_LIVE_VISIBLE,
+      })
+    );
+  });
+
+  it("dispatches WIDGETS_SPORTS_LIVE_HIDDEN on un-intersect when liveEnabled", () => {
+    const { dispatch } = renderWithLive(true);
+    const liveObserver = findLiveObserver();
+    expect(liveObserver).toBeDefined();
+    act(() => {
+      liveObserver.callback([{ isIntersecting: false }]);
+    });
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: at.WIDGETS_SPORTS_LIVE_HIDDEN,
+      })
+    );
+  });
+
+  it("disconnects the live observer on unmount", () => {
+    const { unmount } = renderWithLive(true);
+    const liveObserver = findLiveObserver();
+    expect(liveObserver).toBeDefined();
+    expect(liveObserver.disconnected).toBe(false);
+    unmount();
+    expect(liveObserver.disconnected).toBe(true);
+  });
+
+  // Tab-visibility tests. IntersectionObserver only tracks viewport
+  // intersection; a backgrounded tab keeps reporting isIntersecting=true.
+  // The component also listens for document visibilitychange so the feed
+  // can pause polling for background tabs.
+  describe("tab visibility", () => {
+    let hiddenValue;
+    let originalHiddenDescriptor;
+
+    beforeEach(() => {
+      hiddenValue = false;
+      originalHiddenDescriptor = Object.getOwnPropertyDescriptor(
+        Document.prototype,
+        "hidden"
+      );
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        get: () => hiddenValue,
+      });
+    });
+
+    afterEach(() => {
+      if (originalHiddenDescriptor) {
+        Object.defineProperty(
+          Document.prototype,
+          "hidden",
+          originalHiddenDescriptor
+        );
+      } else {
+        delete document.hidden;
+      }
+    });
+
+    function fireVisibilityChange() {
+      document.dispatchEvent(new Event("visibilitychange"));
+    }
+
+    it("dispatches HIDDEN when the tab is backgrounded while intersecting", () => {
+      const { dispatch } = renderWithLive(true);
+      const liveObserver = findLiveObserver();
+      act(() => {
+        liveObserver.callback([{ isIntersecting: true }]);
+      });
+      dispatch.mockClear();
+      hiddenValue = true;
+      act(() => {
+        fireVisibilityChange();
+      });
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: at.WIDGETS_SPORTS_LIVE_HIDDEN,
+        })
+      );
+    });
+
+    it("dispatches VISIBLE when the tab is foregrounded while intersecting", () => {
+      const { dispatch } = renderWithLive(true);
+      const liveObserver = findLiveObserver();
+      act(() => {
+        liveObserver.callback([{ isIntersecting: true }]);
+      });
+      hiddenValue = true;
+      act(() => {
+        fireVisibilityChange();
+      });
+      dispatch.mockClear();
+      hiddenValue = false;
+      act(() => {
+        fireVisibilityChange();
+      });
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: at.WIDGETS_SPORTS_LIVE_VISIBLE,
+        })
+      );
+    });
+
+    it("stays HIDDEN on foreground when widget is not intersecting", () => {
+      const { dispatch } = renderWithLive(true);
+      const liveObserver = findLiveObserver();
+      act(() => {
+        liveObserver.callback([{ isIntersecting: false }]);
+      });
+      dispatch.mockClear();
+      hiddenValue = true;
+      act(() => {
+        fireVisibilityChange();
+      });
+      hiddenValue = false;
+      act(() => {
+        fireVisibilityChange();
+      });
+      // Every dispatch should be HIDDEN — no VISIBLE leaks through.
+      for (const call of dispatch.mock.calls) {
+        expect(call[0]).toEqual(
+          expect.objectContaining({
+            type: at.WIDGETS_SPORTS_LIVE_HIDDEN,
+          })
+        );
+      }
+    });
+
+    it("clamps intersect dispatch when the tab is already hidden", () => {
+      hiddenValue = true;
+      const { dispatch } = renderWithLive(true);
+      const liveObserver = findLiveObserver();
+      act(() => {
+        liveObserver.callback([{ isIntersecting: true }]);
+      });
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: at.WIDGETS_SPORTS_LIVE_HIDDEN,
+        })
+      );
+      expect(dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: at.WIDGETS_SPORTS_LIVE_VISIBLE,
+        })
+      );
+    });
+
+    it("removes the visibilitychange listener on unmount", () => {
+      const removeSpy = jest.spyOn(document, "removeEventListener");
+      const { unmount } = renderWithLive(true);
+      unmount();
+      expect(removeSpy).toHaveBeenCalledWith(
+        "visibilitychange",
+        expect.any(Function)
+      );
+      removeSpy.mockRestore();
+    });
+  });
+
+  // Regression: when the component initially renders without an <article>
+  // (e.g. PREF_NOVA_ENABLED is off so SportsWidget early-returns null),
+  // the live-visibility useEffect previously captured widgetRef.current[0]
+  // as undefined at mount and never re-ran because its deps included a
+  // stable useRef. Tracking the article via setState lets the effect re-run
+  // when the article actually mounts on a later render.
+  it("attaches the live observer when the article appears on a later render", () => {
+    // First render: Nova disabled → SportsWidget renders null → no article.
+    // The impression observer hook still constructs an observer (it runs
+    // before the early return), but the live-visibility effect should bail
+    // because there's no article element yet.
+    const dispatch = jest.fn();
+    const { rerender } = render(
+      <WrapWithProvider
+        state={makeState({
+          [PREF_SPORTS_WIDGET_LIVE_ENABLED]: true,
+          [PREF_NOVA_ENABLED]: false,
+        })}
+      >
+        <SportsWidget dispatch={dispatch} handleUserInteraction={jest.fn()} />
+      </WrapWithProvider>
+    );
+    expect(findLiveObserver()).toBeUndefined();
+
+    // Second render: Nova flips on. The article mounts; the live observer
+    // should now attach because setLiveEl(el) caused the effect to re-run.
+    rerender(
+      <WrapWithProvider
+        state={makeState({
+          [PREF_SPORTS_WIDGET_LIVE_ENABLED]: true,
+          [PREF_NOVA_ENABLED]: true,
+        })}
+      >
+        <SportsWidget dispatch={dispatch} handleUserInteraction={jest.fn()} />
+      </WrapWithProvider>
+    );
+    expect(findLiveObserver()).toBeDefined();
   });
 });

@@ -304,8 +304,7 @@ nsresult nsDocShellLoadState::CreateFromPendingChannel(
     return rv;
   }
 
-  RefPtr<nsDocShellLoadState> loadState =
-      new nsDocShellLoadState(uri, aLoadIdentifier);
+  RefPtr loadState = MakeRefPtr<nsDocShellLoadState>(uri, aLoadIdentifier);
   loadState->mPendingRedirectedChannel = aPendingChannel;
   loadState->mChannelRegistrarId = aRegistrarId;
 
@@ -379,7 +378,7 @@ nsresult nsDocShellLoadState::CreateFromLoadURIOptions(
     }
   }
 
-  nsAutoString searchProvider, keyword;
+  nsAutoString searchProviderId, keyword;
   RefPtr<nsIInputStream> fixupStream;
   if (fixup) {
     uint32_t fixupFlags =
@@ -404,7 +403,7 @@ nsresult nsDocShellLoadState::CreateFromLoadURIOptions(
         rv = NS_OK;
         fixupInfo->GetPreferredURI(getter_AddRefs(uri));
         fixupInfo->SetConsumer(aBrowsingContext);
-        fixupInfo->GetKeywordProviderName(searchProvider);
+        fixupInfo->GetKeywordProviderId(searchProviderId);
         fixupInfo->GetKeywordAsSent(keyword);
         // GetFixupURIInfo only returns a post data stream if it succeeded
         // and changed the URI, in which case we should override the
@@ -420,7 +419,7 @@ nsresult nsDocShellLoadState::CreateFromLoadURIOptions(
                                   PromiseFlatString(aURI).get());
           }
         }
-        nsDocShell::MaybeNotifyKeywordSearchLoading(searchProvider, keyword);
+        nsDocShell::MaybeNotifyKeywordSearchLoading(searchProviderId, keyword);
       }
     }
   }
@@ -486,7 +485,7 @@ nsresult nsDocShellLoadState::CreateFromLoadURIOptions(
   uint32_t extraFlags = (loadFlags & EXTRA_LOAD_FLAGS);
   loadFlags &= ~EXTRA_LOAD_FLAGS;
 
-  RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(aURI);
+  RefPtr loadState = MakeRefPtr<nsDocShellLoadState>(aURI);
   loadState->SetReferrerInfo(aLoadURIOptions.mReferrerInfo);
 
   loadState->SetLoadType(MAKE_LOAD_TYPE(LOAD_NORMAL, loadFlags));

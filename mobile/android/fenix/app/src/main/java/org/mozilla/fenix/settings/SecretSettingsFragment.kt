@@ -438,6 +438,12 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
+        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_tab_groups_onboarding).apply {
+            isVisible = Config.channel.isNightlyOrDebug
+            isChecked = context.settings().tabGroupsOnboardingEnabled
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_private_mode_and_stories_entry_point).apply {
             isChecked = context.settings().privateModeAndStoriesEntryPointEnabled
             onPreferenceChangeListener = SharedPreferenceUpdater()
@@ -458,6 +464,12 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_google_lens_integration).apply {
             isVisible = Config.channel.isNightlyOrDebug
             isChecked = context.settings().googleLensIntegrationEnabled
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
+        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_show_voice_search_in_display_toolbar).apply {
+            isVisible = Config.channel.isNightlyOrDebug
+            isChecked = context.settings().showVoiceSearchInDisplayToolbar
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 

@@ -22,6 +22,8 @@
   --smartbar-cta-icon-fill: var(--icon-color);
   --smartbar-scroll-mask-height: calc(var(--urlbarView-row-min-height) * 1.5);
   --text-color-deemphasized: light-dark(color-mix(in srgb, var(--color-gray-100) 69%, transparent), color-mix(in srgb, var(--color-gray-05) 69%, transparent));
+
+  --toolbar-field-border-color: transparent;
 }
 
 .smartbar {
@@ -220,10 +222,6 @@
       }
     }
   }
-
-  @media (forced-colors) {
-    border: var(--border-width) solid var(--button-border-color);
-  }
 }
 
 /* Input container */
@@ -256,13 +254,16 @@
 }
 
 .smartbar moz-multiline-editor {
-  --multiline-editor-border: none;
-  --multiline-editor-focus-outline: none;
   --multiline-editor-max-height: 8lh;
   --multiline-editor-scrollbar-width: thin;
-  --multiline-editor-selection-color: light-dark(var(--color-violet-0), var(--color-violet-60));
+  --multiline-editor-border: none;
+  --multiline-editor-focus-outline: none;
   font-size: var(--font-size-large);
   padding: var(--space-xsmall);
+
+  @media not (forced-colors) {
+    --multiline-editor-selection-color: light-dark(var(--color-violet-0), var(--color-violet-60));
+  }
 }
 
 .smartbar .urlbar-go-button,
@@ -283,8 +284,12 @@
   display: flex;
 }
 
-.smartbar-button-container input-cta {
+.smartbar-button-container input-model-select {
   margin-inline-start: auto;
+}
+
+.smartbar-button-container input-cta {
+  margin-inline-start: var(--space-xsmall);
 }
 
 /* Context chips */
@@ -292,7 +297,6 @@
   position: relative;
 }
 
-/* stylelint-disable-next-line media-query-no-invalid */
 @media -moz-pref("browser.nova.enabled") {
   .smartbar {
     @media not (forced-colors) {

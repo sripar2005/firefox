@@ -2307,7 +2307,7 @@ nsresult nsSHistory::GotoIndex(BrowsingContext* aSourceBrowsingContext,
 
 NS_IMETHODIMP_(bool)
 nsSHistory::HasUserInteractionAtIndex(int32_t aIndex) {
-  RefPtr<SessionHistoryEntry> entry = mEntries[aIndex];
+  RefPtr<SessionHistoryEntry> entry = mEntries.SafeElementAt(aIndex);
   if (!entry) {
     return false;
   }
@@ -2527,7 +2527,12 @@ mozilla::dom::SessionHistoryEntry* nsSHistory::FindAdjacentEntryFor(
 
   nextEntry = mEntries[i];
   if (ancestors.IsEmpty()) {
-    return static_cast<SessionHistoryEntry*>(nextEntry.get());
+    // This can happen if we somehow have duplicates in mEntries. This should
+    // ideally never happen, but since it does we need to protect against it.
+    // See bug 2042897.
+    return nextEntry != aEntry
+               ? static_cast<SessionHistoryEntry*>(nextEntry.get())
+               : nullptr;
   }
 
   foundParent =
@@ -2684,7 +2689,7 @@ void nsSHistory::InitiateLoad(BrowsingContext* aSourceBrowsingContext,
   loadResult->mBrowsingContext = aFrameBC;
 
   nsCOMPtr<nsIURI> newURI = aFrameEntry->GetURI();
-  RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(newURI);
+  RefPtr loadState = MakeRefPtr<nsDocShellLoadState>(newURI);
 
   loadState->SetSourceBrowsingContext(aSourceBrowsingContext);
 
@@ -2738,7 +2743,7 @@ NS_IMETHODIMP
 nsSHistory::CreateEntry(nsISHEntry** aEntry) {
   nsCOMPtr<nsISHEntry> entry;
   if (XRE_IsParentProcess()) {
-    entry = new SessionHistoryEntry();
+    entry = MakeRefPtr<SessionHistoryEntry>();
   }
   entry.forget(aEntry);
   return NS_OK;

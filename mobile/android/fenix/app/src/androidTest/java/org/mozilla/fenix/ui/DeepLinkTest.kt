@@ -77,13 +77,6 @@ class DeepLinkTest {
     }
 
     @Test
-    fun openCollections() {
-        robot.openCollections {
-            verifyCollectionsHeader()
-        }
-    }
-
-    @Test
     fun openSettings() {
         robot.openSettings {
             verifyGeneralHeading()
@@ -103,6 +96,13 @@ class DeepLinkTest {
     fun openSettingsPrivacy() {
         robot.openSettingsPrivacy {
             verifyPrivacyHeading()
+        }
+    }
+
+    @Test
+    fun openSettingsAIControls() {
+        robot.openSettingsAIControls {
+            verifyAIControlsToolbarTitle()
         }
     }
 

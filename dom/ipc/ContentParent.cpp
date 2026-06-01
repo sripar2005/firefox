@@ -3004,7 +3004,7 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
   Endpoint<PImageBridgeChild> imageBridge;
   Endpoint<PVRManagerChild> vrBridge;
   Endpoint<PRemoteMediaManagerChild> videoManager;
-  AutoTArray<uint32_t, 3> namespaces;
+  AutoTArray<uint32_t, 4> namespaces;
 
   if (NS_SUCCEEDED(gpuReadyRv) &&
       gpm->CreateContentBridges(OtherEndpointProcInfo(), &compositor,
@@ -3190,7 +3190,7 @@ void ContentParent::OnCompositorUnexpectedShutdown() {
   Endpoint<PImageBridgeChild> imageBridge;
   Endpoint<PVRManagerChild> vrBridge;
   Endpoint<PRemoteMediaManagerChild> videoManager;
-  AutoTArray<uint32_t, 3> namespaces;
+  AutoTArray<uint32_t, 4> namespaces;
 
   if (!gpm->CreateContentBridges(OtherEndpointProcInfo(), &compositor,
                                  &imageBridge, &vrBridge, &videoManager,
@@ -3295,53 +3295,96 @@ ContentParent::CreateClipboardTransferable(const nsTArray<nsCString>& aTypes) {
   return std::move(trans);
 }
 
-mozilla::ipc::IPCResult ContentParent::RecvGetClipboard(
+template <typename GetClipboardDataFunction>
+nsresult ContentParent::GetClipboardDataInternal(
     nsTArray<nsCString>&& aTypes,
     const nsIClipboard::ClipboardType& aWhichClipboard,
     const MaybeDiscarded<WindowContext>& aRequestingWindowContext,
-    IPCTransferableDataOrError* aTransferableDataOrError) {
-  nsresult rv;
+    IPCTransferableDataOrError* aResult, GetClipboardDataFunction&& aFunction) {
   // We expect content processes to always pass a non-null window so Content
   // Analysis can analyze it. (if Content Analysis is active)
   // There may be some cases when a window is closing, etc., in
   // which case returning no clipboard content should not be a problem.
   if (aRequestingWindowContext.IsDiscarded()) {
-    NS_WARNING(
-        "discarded window passed to RecvGetClipboard(); returning no clipboard "
-        "content");
-    *aTransferableDataOrError = NS_ERROR_FAILURE;
-    return IPC_OK();
+    *aResult = NS_ERROR_NOT_AVAILABLE;
+    return NS_OK;
   }
+
   if (aRequestingWindowContext.IsNull()) {
-    return IPC_FAIL(this, "passed null window to RecvGetClipboard()");
+    return NS_ERROR_INVALID_ARG;
   }
-  RefPtr<WindowGlobalParent> window = aRequestingWindowContext.get_canonical();
-  // Retrieve clipboard
+
+  nsresult rv;
   nsCOMPtr<nsIClipboard> clipboard(do_GetService(kCClipboardCID, &rv));
   if (NS_FAILED(rv)) {
-    *aTransferableDataOrError = rv;
-    return IPC_OK();
+    *aResult = rv;
+    return NS_OK;
   }
 
-  // Create transferable
   auto result = CreateClipboardTransferable(aTypes);
   if (result.isErr()) {
-    *aTransferableDataOrError = result.unwrapErr();
-    return IPC_OK();
+    *aResult = result.unwrapErr();
+    return NS_OK;
   }
 
-  // Get data from clipboard
-  nsCOMPtr<nsITransferable> trans = result.unwrap();
-  rv = clipboard->GetData(trans, aWhichClipboard, window);
+  nsCOMPtr<nsITransferable> transferable = result.unwrap();
+  RefPtr<WindowGlobalParent> window = aRequestingWindowContext.get_canonical();
+
+  rv = aFunction(clipboard, transferable, aWhichClipboard, window);
   if (NS_FAILED(rv)) {
-    *aTransferableDataOrError = rv;
-    return IPC_OK();
+    *aResult = rv;
+    return NS_OK;
   }
 
   IPCTransferableData transferableData;
   nsContentUtils::TransferableToIPCTransferableData(
-      trans, &transferableData, true /* aInSyncMessage */, this);
-  *aTransferableDataOrError = std::move(transferableData);
+      transferable, &transferableData, true, this);
+
+  *aResult = std::move(transferableData);
+  return NS_OK;
+}
+
+mozilla::ipc::IPCResult ContentParent::RecvGetClipboard(
+    nsTArray<nsCString>&& aTypes,
+    const nsIClipboard::ClipboardType& aWhichClipboard,
+    const MaybeDiscarded<WindowContext>& aRequestingWindowContext,
+    IPCTransferableDataOrError* aTransferableDataOrError) {
+  nsresult rv = GetClipboardDataInternal(
+      std::move(aTypes), aWhichClipboard, aRequestingWindowContext,
+      aTransferableDataOrError,
+      [](nsIClipboard* clipboard, nsITransferable* trans, ClipboardType type,
+         WindowGlobalParent* window) {
+        return clipboard->GetData(trans, type, window);
+      });
+
+  if (rv == NS_ERROR_INVALID_ARG) {
+    return IPC_FAIL(this, "passed null window to RecvGetClipboard()");
+  }
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult ContentParent::RecvGetClipboardDataIfSmallerThan(
+    nsTArray<nsCString>&& aTypes, uint64_t aThreshold,
+    const nsIClipboard::ClipboardType& aWhichClipboard,
+    const MaybeDiscarded<WindowContext>& aRequestingWindowContext,
+    GetClipboardDataIfSmallerThanResolver&& aResolver) {
+  IPCTransferableDataOrError result;
+
+  nsresult rv = GetClipboardDataInternal(
+      std::move(aTypes), aWhichClipboard, aRequestingWindowContext, &result,
+      [aThreshold](nsIClipboard* clipboard, nsITransferable* trans,
+                   ClipboardType type, WindowGlobalParent* window) {
+        return clipboard->GetDataIfSmallerThanNative(trans, aThreshold, type,
+                                                     window);
+      });
+
+  if (rv == NS_ERROR_INVALID_ARG) {
+    return IPC_FAIL(
+        this, "passed null window to RecvGetClipboardDataIfSmallerThan()");
+  }
+
+  aResolver(std::move(result));
   return IPC_OK();
 }
 
@@ -4155,6 +4198,10 @@ mozilla::ipc::IPCResult ContentParent::RecvCloneDocumentTreeInto(
     return IPC_FAIL(this, "Illegal subframe clone");
   }
 
+  if (aPrintData.remotePrintJob()) {
+    return IPC_FAIL(this, "Shouldn't pass print jobs around this IPC call");
+  }
+
   ContentParent* cp = source->GetContentParent();
   if (NS_WARN_IF(!cp)) {
     return IPC_OK();
@@ -4217,6 +4264,9 @@ mozilla::ipc::IPCResult ContentParent::RecvConstructPopupBrowser(
           aInitialWindowInit.context().mBrowsingContextId);
   if (!browsingContext || browsingContext->IsDiscarded()) {
     return IPC_FAIL(this, "Null or discarded initial BrowsingContext");
+  }
+  if (!browsingContext->Group()->IsKnownForChildID(OtherChildID())) {
+    return IPC_FAIL(this, "Unknown BrowsingContextGroup for this process");
   }
   if (!aInitialWindowInit.principal()) {
     return IPC_FAIL(this, "Cannot create without valid initial principal");
@@ -5880,6 +5930,11 @@ mozilla::ipc::IPCResult ContentParent::RecvStoreAndBroadcastBlobURLRegistration(
   if (!ValidatePrincipal(aPrincipal, {ValidatePrincipalOptions::AllowSystem})) {
     return PrincipalValidationIpcFail(aPrincipal, this, __func__);
   }
+
+  if (!BlobURLProtocolHandler::IsBlobURLValid(aPrincipal, aURI)) {
+    return IPC_FAIL(this, "Blob URL format is invalid.");
+  }
+
   RefPtr<BlobImpl> blobImpl = IPCBlobUtils::Deserialize(aBlob);
   if (NS_WARN_IF(!blobImpl)) {
     return IPC_FAIL(this, "Blob deserialization failed.");
@@ -6067,7 +6122,7 @@ nsresult ContentParent::AboutToLoadDocumentForChild(nsIChannel* aChannel) {
 
     RefPtr<Promise> dummy;
     rv = lsm->Preload(storagePrincipal, nullptr, getter_AddRefs(dummy));
-    if (NS_FAILED(rv)) {
+    if (NS_FAILED(rv) && rv != NS_ERROR_NOT_AVAILABLE) {
       NS_WARNING("Failed to preload local storage!");
     }
   }
@@ -6142,9 +6197,9 @@ void ContentParent::TransmitBlobURLsForPrincipal(nsIPrincipal* aPrincipal) {
             return true;
           }
 
-          registrations.AppendElement(
-              BlobURLRegistrationData(nsCString(aURI), WrapNotNull(aPrincipal),
-                                      nsCString(aPartitionKey), aRevoked));
+          registrations.AppendElement(BlobURLRegistrationData(
+              nsCString(aURI), WrapNotNull(aBlobPrincipal),
+              nsCString(aPartitionKey), aRevoked));
 
           nsresult rv = TransmitPermissionsForPrincipal(aBlobPrincipal);
           (void)NS_WARN_IF(NS_FAILED(rv));
@@ -6712,13 +6767,14 @@ mozilla::ipc::IPCResult ContentParent::RecvNotifyMediaPlaybackChanged(
 
 mozilla::ipc::IPCResult ContentParent::RecvNotifyMediaAudibleChanged(
     const MaybeDiscarded<BrowsingContext>& aContext, MediaAudibleState aState,
-    ControlType aType) {
+    ControlType aType, AudioSessionType aSessionType) {
   if (aContext.IsNullOrDiscarded()) {
     return IPC_OK();
   }
   if (RefPtr<IMediaInfoUpdater> updater =
           aContext.get_canonical()->GetMediaController()) {
-    updater->NotifyMediaAudibleChanged(aContext.ContextId(), aState, aType);
+    updater->NotifyMediaAudibleChanged(aContext.ContextId(), aState, aType,
+                                       aSessionType);
   }
   return IPC_OK();
 }

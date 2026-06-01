@@ -765,15 +765,6 @@ features:
         type: OpeningScreenOption
         default: homepage-four-hours
 
-  unified-trust-panel:
-    description: Enables the unified trust panel.
-    variables:
-      enabled:
-        description: >
-          Whether or not to enable the unified trust panel.
-        type: Boolean
-        default: true
-
   user-characteristics:
     description: A feature for control user characteristic data collection
     variables:
@@ -852,7 +843,11 @@ features:
         type: Boolean
         default: true
       in-app-messages-enabled:
-        description: When true, non CFR popups will show
+        description: >
+          Enables non-CFR in-app messaging surfaces. Currently includes:
+          - Wallpaper onboarding bottom sheet
+          - PWA onboarding ("Add to Home screen") dialog
+          - "Open links in apps" banner
         type: Boolean
         default: true
 
@@ -912,14 +907,6 @@ features:
         value:
           show-new-prompt: false
 
-  app-icon-selection:
-    description: Allows the user to set an alternative app launcher icon.
-    variables:
-      enabled:
-        description: Whether or not the feature is available for the user.
-        type: Boolean
-        default: true
-
   tab-management-enhancements:
     description: Control the visibility of the tab management enhancements.
     variables:
@@ -976,6 +963,24 @@ features:
       - channel: nightly
         value:
           enabled: true
+  tab-groups-onboarding:
+    description: Control the visibility of onboarding for tab groups.
+    variables:
+      enabled:
+        description: >
+          Whether or not to enable onboarding for tab groups.
+        type: Boolean
+        default: false
+    defaults:
+      - channel: release
+        value:
+          enabled: false
+      - channel: beta
+        value:
+          enabled: false
+      - channel: nightly
+        value:
+          enabled: false
 
   marketing-onboarding-card:
     description: A temporary feature to control the marketing onboarding card shown during the onboarding flow.
@@ -1238,6 +1243,22 @@ features:
       - channel: nightly
         value:
           enabled: false
+
+  voice-search-in-display-mode:
+    description: Controls whether the voice search entry point is shown in the display-mode browser toolbar.
+    variables:
+      enabled:
+        description: If true, voice search is shown in the display toolbar.
+        type: Boolean
+        default: false
+    defaults:
+      - channel: developer
+        value:
+          enabled: true
+      - channel: nightly
+        value:
+          enabled: true
+
 
   homepage-sports-widget:
     description: Feature to enable Homepage Sports Widget for users on Firefox on Android.

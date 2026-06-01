@@ -10,7 +10,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.ComposeView
-import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.compose.browser.toolbar.NavigationBar
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
 import mozilla.components.compose.browser.toolbar.store.ToolbarGravity.Bottom
@@ -72,30 +71,11 @@ class HomeNavigationBar(
         }
     }
 
-    /**
-     * Returns a [Composable] function that renders the default navigation bar content.
-     */
-    override fun asComposable(): @Composable () -> Unit = {
-        DefaultNavigationBarContent()
-    }
-
-    override fun updateDividerVisibility(isVisible: Boolean) {
-        // no-op
-    }
-
-    override fun updateButtonVisibility(browserState: BrowserState) {
-        // no-op
-    }
-
     override fun updateAddressBarVisibility(isVisible: Boolean) {
         // no-op
     }
 
-    override fun updateTabCounter(browserState: BrowserState) {
-        // no-op
-    }
-
-    override fun build(browserState: BrowserState, middleSearchEnabled: Boolean) {
+    override fun build(middleSearchEnabled: Boolean) {
         // no-op
     }
 }

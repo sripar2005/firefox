@@ -32,13 +32,12 @@ add_task(async function test_tooManyLinks() {
       url: server.mockResponse.url,
       isSchemaValid: true,
       isSignedIn: true,
-      loadingPromise: null,
     });
 
     Assert.equal(body.type, "tabs", "Share type is 'tabs'");
     Assert.equal(
       body.title,
-      "33 tabs",
+      "30 tabs",
       "Title reflects tab count for tab shares"
     );
     Assert.equal(body.links.length, 30, "Share contains 30 links");
@@ -53,6 +52,32 @@ add_task(async function test_tooManyLinks() {
       "Second link URL matches tab 2"
     );
 
+    gBrowser.removeTabs(tabs);
+  });
+});
+
+add_task(async function test_invalidSchemaGlean() {
+  await withContentSharingMockServer(async () => {
+    let tabs = [
+      BrowserTestUtils.addTab(gBrowser, "about:blank"),
+      BrowserTestUtils.addTab(gBrowser, "about:blank"),
+    ];
+
+    await Services.fog.testFlushAllChildren();
+    Services.fog.testResetFOG();
+
+    await ContentSharingUtils.handleShareTabs(tabs);
+
+    await Services.fog.testFlushAllChildren();
+    let gleanData = Glean.collectionShare.error.testGetValue();
+    Assert.equal(gleanData.length, 1, "Should have one error event");
+    Assert.equal(
+      gleanData[0].extra.error_type,
+      ERRORS.INVALID_SCHEMA,
+      "Should have invalid schema error type"
+    );
+
+    window.gDialogBox.dialog.close();
     gBrowser.removeTabs(tabs);
   });
 });
@@ -92,7 +117,6 @@ add_task(async function test_genericError() {
       url: null,
       isSchemaValid: true,
       isSignedIn: true,
-      loadingPromise: null,
     });
 
     Assert.equal(body.type, "tabs", "Share type is 'tabs'");

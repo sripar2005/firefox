@@ -95,7 +95,7 @@
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/power/PowerManagerService.h"
 #include "mozilla/glean/DomMediaMetrics.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/nsVideoFrame.h"
 #include "nsAttrValueInlines.h"
 #include "nsAttrValueOrString.h"
@@ -612,7 +612,9 @@ class HTMLMediaElement::MediaControlKeyListener final
   void NotifyAudibleStateChanged(MediaAudibleState aState) {
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(IsStarted());
-    mControlAgent->NotifyMediaAudibleChanged(mOwnerBrowsingContextId, aState);
+    mControlAgent->NotifyMediaAudibleChanged(mOwnerBrowsingContextId, aState,
+                                             ControlType::eControllable,
+                                             AudioSessionType::Playback);
   }
 
   MediaPlaybackState mState = MediaPlaybackState::eStopped;
@@ -1496,8 +1498,7 @@ HTMLMediaElement::MediaLoadListener::OnStartRequest(nsIRequest* aRequest) {
       // fingerprinting, cryptomining, etc).
       // We make a note of this media node by including it in a dedicated
       // array of blocked tracking nodes under its parent document.
-      if (net::UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(
-              status)) {
+      if (net::ChannelClassifierUtils::IsClassifierBlockingErrorCode(status)) {
         element->OwnerDoc()->AddBlockedNodeByClassifier(element);
       }
       element->NotifyLoadError(
@@ -1534,7 +1535,8 @@ HTMLMediaElement::MediaLoadListener::OnStartRequest(nsIRequest* aRequest) {
       NS_SUCCEEDED(rv = element->InitializeDecoderForChannel(
                        channel, getter_AddRefs(mNextListener))) &&
       mNextListener) {
-    rv = mNextListener->OnStartRequest(aRequest);
+    nsCOMPtr<nsIStreamListener> nextListener = mNextListener;
+    rv = nextListener->OnStartRequest(aRequest);
   } else {
     // If InitializeDecoderForChannel() returned an error, fire a network error.
     if (NS_FAILED(rv) && !mNextListener) {
@@ -1554,8 +1556,8 @@ HTMLMediaElement::MediaLoadListener::OnStartRequest(nsIRequest* aRequest) {
 NS_IMETHODIMP
 HTMLMediaElement::MediaLoadListener::OnStopRequest(nsIRequest* aRequest,
                                                    nsresult aStatus) {
-  if (mNextListener) {
-    return mNextListener->OnStopRequest(aRequest, aStatus);
+  if (nsCOMPtr<nsIStreamListener> nextListener = mNextListener) {
+    return nextListener->OnStopRequest(aRequest, aStatus);
   }
   return NS_OK;
 }
@@ -1571,7 +1573,8 @@ HTMLMediaElement::MediaLoadListener::OnDataAvailable(nsIRequest* aRequest,
         "canceled this request");
     return NS_BINDING_ABORTED;
   }
-  return mNextListener->OnDataAvailable(aRequest, aStream, aOffset, aCount);
+  nsCOMPtr<nsIStreamListener> nextListener = mNextListener;
+  return nextListener->OnDataAvailable(aRequest, aStream, aOffset, aCount);
 }
 
 NS_IMETHODIMP

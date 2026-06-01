@@ -148,32 +148,35 @@ void DeviceManagerDx::ReleaseD3D11() {
 }
 
 nsTArray<DXGI_OUTPUT_DESC1> DeviceManagerDx::EnumerateOutputs() {
-  RefPtr<IDXGIAdapter> adapter = GetDXGIAdapter();
-
-  if (!adapter) {
-    NS_WARNING("Failed to acquire a DXGI adapter for enumerating outputs.");
-    return nsTArray<DXGI_OUTPUT_DESC1>();
+  MutexAutoLock lock(mDeviceLock);
+  nsTArray<DXGI_OUTPUT_DESC1> outputs;
+  if (!EnsureFactoryLocked()) {
+    return outputs;
   }
 
-  nsTArray<DXGI_OUTPUT_DESC1> outputs;
-  for (UINT i = 0;; ++i) {
-    RefPtr<IDXGIOutput> output = nullptr;
-    if (FAILED(adapter->EnumOutputs(i, getter_AddRefs(output)))) {
+  RefPtr<IDXGIAdapter1> adapter;
+  for (UINT adapterIndex = 0;; adapterIndex++) {
+    if (FAILED(
+            mFactory->EnumAdapters1(adapterIndex, getter_AddRefs(adapter)))) {
       break;
     }
 
-    RefPtr<IDXGIOutput6> output6 = nullptr;
-    if (FAILED(output->QueryInterface(__uuidof(IDXGIOutput6),
-                                      getter_AddRefs(output6)))) {
-      break;
+    for (UINT outputIndex = 0;; outputIndex++) {
+      RefPtr<IDXGIOutput> output;
+      if (FAILED(adapter->EnumOutputs(outputIndex, getter_AddRefs(output)))) {
+        break;
+      }
+      RefPtr<IDXGIOutput6> output6 = nullptr;
+      if (FAILED(output->QueryInterface(__uuidof(IDXGIOutput6),
+                                        getter_AddRefs(output6)))) {
+        break;
+      }
+      DXGI_OUTPUT_DESC1 desc;
+      if (FAILED(output6->GetDesc1(&desc))) {
+        break;
+      }
+      outputs.AppendElement(desc);
     }
-
-    DXGI_OUTPUT_DESC1 desc;
-    if (FAILED(output6->GetDesc1(&desc))) {
-      break;
-    }
-
-    outputs.AppendElement(desc);
   }
   return outputs;
 }
@@ -674,14 +677,14 @@ void DeviceManagerDx::CreateDirectCompositionDeviceLocked() {
 /* static */
 HANDLE DeviceManagerDx::CreateDCompSurfaceHandle() {
   if (!sDcompCreateSurfaceHandleFn) {
-    return 0;
+    return nullptr;
   }
 
-  HANDLE handle = 0;
+  HANDLE handle = nullptr;
   HRESULT hr = sDcompCreateSurfaceHandleFn(COMPOSITIONOBJECT_ALL_ACCESS,
                                            nullptr, &handle);
   if (FAILED(hr)) {
-    return 0;
+    return nullptr;
   }
 
   return handle;

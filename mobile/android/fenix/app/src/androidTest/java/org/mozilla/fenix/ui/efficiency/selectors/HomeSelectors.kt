@@ -67,12 +67,6 @@ object HomeSelectors {
         groups = listOf("homeScreen"),
     )
 
-    val NO_COLLECTIONS_TEXT = Selector(
-        strategy = SelectorStrategy.COMPOSE_BY_TEXT,
-        value = getStringResource(R.string.no_collections_description2),
-        description = "the no collections description text",
-        groups = listOf("homeScreen"),
-    )
     val TAB_COUNTER_ZERO = Selector(
         strategy = SelectorStrategy.COMPOSE_BY_CONTENT_DESCRIPTION,
         value = "Non-private Tabs Open: 0. Tap to switch tabs.",
@@ -94,6 +88,13 @@ object HomeSelectors {
         groups = listOf("jumpBackIn"),
     )
 
+    val RECENT_BOOKMARKS_SECTION = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = getStringResource(R.string.home_bookmarks_title),
+        description = "Bookmarks section header",
+        groups = listOf("recentBookmarksSection"),
+    )
+
     val all = listOf(
         HOMEPAGE_VIEW,
         MAIN_MENU_BUTTON,
@@ -101,9 +102,9 @@ object HomeSelectors {
         TOP_SITES_LIST,
         HOME_WORDMARK_LOGO,
         COLLECTIONS_HEADER,
-        NO_COLLECTIONS_TEXT,
         TAB_COUNTER_ZERO,
         JUMP_BACK_IN_SECTION,
         JUMP_BACK_IN_SHOW_ALL,
+        RECENT_BOOKMARKS_SECTION,
     )
 }

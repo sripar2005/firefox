@@ -7,6 +7,7 @@ package org.mozilla.fenix.components.appstate.sports
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mozilla.fenix.components.appstate.AppAction
@@ -299,7 +300,7 @@ class SportsWidgetReducerTest {
     }
 
     @Test
-    fun `GIVEN errorState is set WHEN MatchCardStateUpdated is dispatched THEN errorState is cleared`() {
+    fun `GIVEN errorState is set WHEN MatchCardStateUpdated is dispatched THEN errorState is preserved`() {
         val initialState = AppState(
             sportsWidgetState = SportsWidgetState(
                 matchCardStates = emptyList(),
@@ -314,11 +315,58 @@ class SportsWidgetReducerTest {
             ),
         )
 
+        assertEquals(SportCardErrorState.LoadFailed, finalState.sportsWidgetState.errorState)
+    }
+
+    @Test
+    fun `GIVEN errorState is set WHEN ErrorStateCleared is dispatched THEN errorState is cleared`() {
+        val initialState = AppState(
+            sportsWidgetState = SportsWidgetState(
+                errorState = SportCardErrorState.ConnectionInterrupted,
+            ),
+        )
+
+        val finalState = AppStoreReducer.reduce(
+            initialState,
+            AppAction.SportsWidgetAction.ErrorStateCleared,
+        )
+
         assertNull(finalState.sportsWidgetState.errorState)
     }
 
     @Test
-    fun `GIVEN errorState is set WHEN MatchCardStateUpdated is dispatched with an empty list THEN errorState is still cleared`() {
+    fun `GIVEN errorState is set and matchCardStates populated WHEN ErrorStateCleared is dispatched THEN matchCardStates are preserved`() {
+        val cards = FakeMatchCardScenario.Live.build()
+        val initialState = AppState(
+            sportsWidgetState = SportsWidgetState(
+                matchCardStates = cards,
+                errorState = SportCardErrorState.LoadFailed,
+            ),
+        )
+
+        val finalState = AppStoreReducer.reduce(
+            initialState,
+            AppAction.SportsWidgetAction.ErrorStateCleared,
+        )
+
+        assertNull(finalState.sportsWidgetState.errorState)
+        assertEquals(cards, finalState.sportsWidgetState.matchCardStates)
+    }
+
+    @Test
+    fun `GIVEN errorState is already null WHEN ErrorStateCleared is dispatched THEN state is unchanged`() {
+        val initialState = AppState(sportsWidgetState = SportsWidgetState(errorState = null))
+
+        val finalState = AppStoreReducer.reduce(
+            initialState,
+            AppAction.SportsWidgetAction.ErrorStateCleared,
+        )
+
+        assertSame(initialState, finalState)
+    }
+
+    @Test
+    fun `GIVEN errorState is set WHEN MatchCardStateUpdated is dispatched with an empty list THEN errorState is preserved`() {
         val initialState = AppState(
             sportsWidgetState = SportsWidgetState(
                 matchCardStates = FakeMatchCardScenario.Live.build(),
@@ -331,7 +379,7 @@ class SportsWidgetReducerTest {
             AppAction.SportsWidgetAction.MatchCardStateUpdated(matchCardStates = emptyList()),
         )
 
-        assertNull(finalState.sportsWidgetState.errorState)
+        assertEquals(SportCardErrorState.ConnectionInterrupted, finalState.sportsWidgetState.errorState)
     }
 
     @Test
@@ -356,6 +404,32 @@ class SportsWidgetReducerTest {
         assertTrue(finalState.sportsWidgetState.isVisible)
         assertTrue(finalState.sportsWidgetState.isFeatureEnabled)
         assertEquals(matchCardStates, finalState.sportsWidgetState.matchCardStates)
+    }
+
+    @Test
+    fun `GIVEN no eliminated countries WHEN EliminatedCountriesUpdated is dispatched THEN eliminatedCountries is set`() {
+        val initialState = AppState(sportsWidgetState = SportsWidgetState())
+
+        val finalState = AppStoreReducer.reduce(
+            initialState,
+            AppAction.SportsWidgetAction.EliminatedCountriesUpdated(countryCodes = setOf("MEX", "RSA")),
+        )
+
+        assertEquals(setOf("MEX", "RSA"), finalState.sportsWidgetState.eliminatedCountries)
+    }
+
+    @Test
+    fun `GIVEN eliminated countries set WHEN EliminatedCountriesUpdated is dispatched with empty set THEN eliminatedCountries is cleared`() {
+        val initialState = AppState(
+            sportsWidgetState = SportsWidgetState(eliminatedCountries = setOf("MEX")),
+        )
+
+        val finalState = AppStoreReducer.reduce(
+            initialState,
+            AppAction.SportsWidgetAction.EliminatedCountriesUpdated(countryCodes = emptySet()),
+        )
+
+        assertTrue(finalState.sportsWidgetState.eliminatedCountries.isEmpty())
     }
 
     @Test
@@ -412,5 +486,60 @@ class SportsWidgetReducerTest {
         )
 
         assertTrue(finalState.sportsWidgetState.isOneWeekToWorldCup)
+    }
+
+    @Test
+    fun `WHEN WorldCupStarted override turned ON THEN OneWeek override is forced off`() {
+        val initialState = AppState(
+            sportsWidgetState = SportsWidgetState(
+                hasWorldCupStartedOverride = false,
+                isOneWeekToWorldCupOverride = true,
+            ),
+        )
+
+        val finalState = AppStoreReducer.reduce(
+            initialState,
+            AppAction.SportsWidgetAction.WorldCupStartedOverrideUpdated(hasWorldCupStartedOverride = true),
+        )
+
+        assertTrue(finalState.sportsWidgetState.hasWorldCupStarted)
+        assertFalse(finalState.sportsWidgetState.isOneWeekToWorldCup)
+    }
+
+    @Test
+    fun `WHEN OneWeek override turned ON THEN WorldCupStarted override is forced off`() {
+        val initialState = AppState(
+            sportsWidgetState = SportsWidgetState(
+                hasWorldCupStartedOverride = true,
+                isOneWeekToWorldCupOverride = false,
+            ),
+        )
+
+        val finalState = AppStoreReducer.reduce(
+            initialState,
+            AppAction.SportsWidgetAction.OneWeekToWorldCupOverrideUpdated(isOneWeekToWorldCupOverride = true),
+        )
+
+        assertTrue(finalState.sportsWidgetState.isOneWeekToWorldCup)
+        assertFalse(finalState.sportsWidgetState.hasWorldCupStarted)
+    }
+
+    @Test
+    fun `WHEN OneWeek override turned OFF THEN WorldCupStarted override is preserved`() {
+        val initialState = AppState(
+            sportsWidgetState = SportsWidgetState(
+                hasWorldCupStartedOverride = true,
+                isOneWeekToWorldCupOverride = false,
+            ),
+        )
+
+        val finalState = AppStoreReducer.reduce(
+            initialState,
+            AppAction.SportsWidgetAction.OneWeekToWorldCupOverrideUpdated(isOneWeekToWorldCupOverride = false),
+        )
+
+        // Toggling one OFF doesn't touch the other.
+        assertTrue(finalState.sportsWidgetState.hasWorldCupStarted)
+        assertFalse(finalState.sportsWidgetState.isOneWeekToWorldCup)
     }
 }

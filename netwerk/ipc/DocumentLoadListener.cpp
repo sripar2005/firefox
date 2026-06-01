@@ -68,7 +68,7 @@
 #include "mozilla/dom/nsHTTPSOnlyUtils.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/RemoteWebProgressRequest.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/intl/Localization.h"
 #include "nsDocLoader.h"  // for FormatStatusMessage
@@ -330,9 +330,9 @@ class ParentProcessDocumentOpenInfo final : public nsDocumentOpenInfo,
     return rv;
   }
 
-  nsDocumentOpenInfo* Clone() override {
+  already_AddRefed<nsDocumentOpenInfo> Clone() override {
     mCloned = true;
-    return new ParentProcessDocumentOpenInfo(
+    return MakeAndAddRef<ParentProcessDocumentOpenInfo>(
         mListener, mFlags, mBrowsingContext, mTypeHint, mIsDocumentLoad);
   }
 
@@ -397,7 +397,8 @@ class ParentProcessDocumentOpenInfo final : public nsDocumentOpenInfo,
         request->CancelWithReason(
             rv, "nsDocumentOpenInfo::OnStartRequest failed"_ns);
       }
-      return m_targetStreamListener->OnStartRequest(request);
+      nsCOMPtr<nsIStreamListener> listener = m_targetStreamListener;
+      return listener->OnStartRequest(request);
     }
     if (m_targetStreamListener != mListener) {
       LOG(
@@ -2608,7 +2609,7 @@ void DocumentLoadListener::MaybeReportBlockedByURLClassifier(nsresult aStatus) {
     return;
   }
 
-  if (!UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(aStatus)) {
+  if (!ChannelClassifierUtils::IsClassifierBlockingErrorCode(aStatus)) {
     return;
   }
 

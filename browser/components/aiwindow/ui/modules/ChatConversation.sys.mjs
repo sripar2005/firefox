@@ -65,6 +65,7 @@ export class ChatConversation extends EventEmitter {
   createdDate;
   updatedDate;
   status;
+  /** @type {SecurityProperties} */
   securityProperties;
   /** @type {ChatMessage[]} */
   #messages;
@@ -513,6 +514,8 @@ export class ChatConversation extends EventEmitter {
     const newTurnIndex =
       this.#messages.length === 1 ? currentTurn : currentTurn + 1;
 
+    this.#dismissPendingUndos();
+
     return this.addMessage(
       MESSAGE_ROLE.USER,
       content,
@@ -520,6 +523,44 @@ export class ChatConversation extends EventEmitter {
       newTurnIndex,
       userOpts
     );
+  }
+
+  /**
+   * Mark the most recent ai-action-result toolUIData with
+   * properties.undoDismissed: true. Called when a user message
+   * is added, signalling the previous action is no longer available.
+   *
+   * At most one card is non-dismissed at any time, so walk back
+   * and stop on first hit.
+   *
+   * Persistence: emit triggers re-render. The toolUIData mutation
+   * is persisted on the next ChatStore.updateConversation call
+   * which fires when the assistant turn that follows completes.
+   */
+  #dismissPendingUndos() {
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const m = this.messages[i];
+      const td = m.toolUIData;
+      if (
+        !td ||
+        td.uiType !== "ai-action-result" ||
+        td.properties?.undoDismissed
+      ) {
+        continue;
+      }
+
+      const operationId = td.properties?.confirmedData?.operationId;
+      if (!operationId) {
+        continue;
+      }
+
+      m.toolUIData = {
+        ...td,
+        properties: { ...td.properties, undoDismissed: true },
+      };
+      this.emit("chat-conversation:message-update", m);
+      break;
+    }
   }
 
   /**
@@ -585,6 +626,46 @@ export class ChatConversation extends EventEmitter {
   }
 
   /**
+   * Loads and renders the system prompt for the given engine instance.
+   *
+   * @param {object} engineInstance - The engine instance for the model
+   * @returns {Promise<string>} The rendered system prompt
+   */
+  async #loadSystemPrompt(engineInstance) {
+    const _systemPrompt = await engineInstance.loadPrompt(MODEL_FEATURES.CHAT);
+    let tableInstructions;
+    if (Services.prefs.getBoolPref(TABLES_PREF, false)) {
+      tableInstructions = await engineInstance.loadPrompt(
+        MODEL_FEATURES.ENABLE_TABLE_INSTRUCTIONS
+      );
+    } else {
+      tableInstructions = await engineInstance.loadPrompt(
+        MODEL_FEATURES.DISABLE_TABLE_INSTRUCTIONS
+      );
+    }
+    return renderPrompt(_systemPrompt, { tableInstructions });
+  }
+
+  /**
+   * Updates the main system prompt for a new model.
+   * Used when the model changes mid-conversation.
+   *
+   * @param {object} engineInstance - The engine instance for the model
+   */
+  async updateSystemPromptForModel(engineInstance) {
+    const systemMessage = this.messages.find(
+      message =>
+        message.role === MESSAGE_ROLE.SYSTEM &&
+        message.content?.type === SYSTEM_PROMPT_TYPE.TEXT
+    );
+    if (!systemMessage) {
+      return;
+    }
+
+    systemMessage.content.body = await this.#loadSystemPrompt(engineInstance);
+  }
+
+  /**
    * Takes a new prompt and generates LLM context messages before
    * adding new user prompt to messages.
    *
@@ -607,20 +688,7 @@ export class ChatConversation extends EventEmitter {
     this.removeSystemTimeMemoriesMessages();
 
     if (!this.messages.length) {
-      const _systemPrompt = await engineInstance.loadPrompt(
-        MODEL_FEATURES.CHAT
-      );
-      let tableInstructions;
-      if (Services.prefs.getBoolPref(TABLES_PREF, false)) {
-        tableInstructions = await engineInstance.loadPrompt(
-          MODEL_FEATURES.ENABLE_TABLE_INSTRUCTIONS
-        );
-      } else {
-        tableInstructions = await engineInstance.loadPrompt(
-          MODEL_FEATURES.DISABLE_TABLE_INSTRUCTIONS
-        );
-      }
-      const systemPrompt = renderPrompt(_systemPrompt, { tableInstructions });
+      const systemPrompt = await this.#loadSystemPrompt(engineInstance);
       this.addSystemMessage(SYSTEM_PROMPT_TYPE.TEXT, systemPrompt);
     }
 
@@ -684,7 +752,9 @@ export class ChatConversation extends EventEmitter {
    */
   async retryMessage(message) {
     if (message.role !== MESSAGE_ROLE.USER) {
-      throw new Error("Not a user message");
+      const err = new Error("Not a user message");
+      err.clientReason = "retryInvalidMessage";
+      throw err;
     }
 
     // Capture ephemeral system messages before removal so we can return them.
@@ -709,7 +779,9 @@ export class ChatConversation extends EventEmitter {
     );
 
     if (retryMessageIndex === -1) {
-      throw new Error("Unrelated message");
+      const err = new Error("Unrelated message");
+      err.clientReason = "retryInvalidMessage";
+      throw err;
     }
 
     const toDeleteMessages = this.#messages.splice(retryMessageIndex);

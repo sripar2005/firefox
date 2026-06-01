@@ -2370,6 +2370,41 @@ who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "1.8.0 -> 1.8.1"
 
+[[audits.either]]
+who = "Erich Gubler <erichdongubler@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "1.8.1 -> 1.9.0"
+
+[[audits.either]]
+who = "Erich Gubler <erichdongubler@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "1.9.0 -> 1.10.0"
+
+[[audits.either]]
+who = "Erich Gubler <erichdongubler@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "1.10.0 -> 1.12.0"
+
+[[audits.either]]
+who = "Erich Gubler <erichdongubler@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "1.12.0 -> 1.13.0"
+
+[[audits.either]]
+who = "Erich Gubler <erichdongubler@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "1.13.0 -> 1.14.0"
+
+[[audits.either]]
+who = "Erich Gubler <erichdongubler@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "1.14.0 -> 1.15.0"
+
+[[audits.either]]
+who = "Erich Gubler <erichdongubler@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "1.15.0 -> 1.16.0"
+
 [[audits.embed-manifest]]
 who = "Alex Franchuk <afranchuk@mozilla.com>"
 criteria = "safe-to-deploy"
@@ -3212,6 +3247,21 @@ delta = "0.15.2 -> 0.15.5"
 who = "Erich Gubler <erichdongubler@gmail.com>"
 criteria = "safe-to-deploy"
 delta = "0.15.5 -> 0.16.0"
+
+[[audits.hashbrown]]
+who = "Erich Gubler <erichdongubler@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.16.0 -> 0.16.1"
+
+[[audits.hashbrown]]
+who = "Erich Gubler <erichdongubler@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.16.1 -> 0.17.0"
+
+[[audits.hashbrown]]
+who = "Erich Gubler <erichdongubler@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.17.0 -> 0.17.1"
 
 [[audits.hashlink]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
@@ -4774,7 +4824,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:64394cc73a10222134ab0ac858f29f535e98d553"
+delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
 importable = false
 
 [[audits.net2]]
@@ -7624,7 +7674,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:64394cc73a10222134ab0ac858f29f535e98d553"
+delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
 importable = false
 
 [[audits.wgpu-core-deps-apple]]
@@ -7674,7 +7724,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:64394cc73a10222134ab0ac858f29f535e98d553"
+delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
 importable = false
 
 [[audits.wgpu-core-deps-windows-linux-android]]
@@ -7724,7 +7774,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:64394cc73a10222134ab0ac858f29f535e98d553"
+delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
 importable = false
 
 [[audits.wgpu-hal]]
@@ -7852,7 +7902,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:64394cc73a10222134ab0ac858f29f535e98d553"
+delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
 importable = false
 
 [[audits.wgpu-naga-bridge]]
@@ -7872,7 +7922,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:64394cc73a10222134ab0ac858f29f535e98d553"
+delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
 importable = false
 
 [[audits.wgpu-types]]
@@ -7995,7 +8045,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:64394cc73a10222134ab0ac858f29f535e98d553"
+delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
 importable = false
 
 [[audits.whatsys]]
