@@ -40,6 +40,8 @@ One of the key decisions in architecture of Firefox involves the use of multi-pr
 
 ### 2.2 Component Diagram
 
+![Component Diagram](images/diagram.png)
+
 ### 2.3 Dependencies
 
 ### 2.4 Codeline Model
