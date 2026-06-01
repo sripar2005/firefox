@@ -96,4 +96,11 @@ The final submission will expand this section with:
 | `measuring-tool.js` | Observer pattern present (refactored from static EventEmitter) |
 | `rulers.js` | Same observer pattern |
 
+##### Description
+
+The Observer pattern is implemented in Firefox DevTools highlighters via the **`EventEmitter`** class. Files in `devtools/server/actors/highlighters/` such as `eye-dropper.js`, `paused-debugger.js`, and `remote-node-picker-notice.js` extend `EventEmitter`, allowing them to:
+
+1. **Emit events** — notify listeners when something changes in the page (scroll, resize, DOM mutation)
+2. **Listen for events** — react to changes and update visual overlays accordingly
+
 ## 5. Architectural Assessment
