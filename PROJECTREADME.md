@@ -82,4 +82,18 @@ The final submission will expand this section with:
 
 ### 4.2 Design Patterns
 
+#### Observer Pattern (Behavioral)
+
+##### Location
+
+`devtools/server/actors/highlighters/`
+
+| File | Evidence |
+|------|----------|
+| `eye-dropper.js` | Extends `EventEmitter` (comment: *"Make classes extend EventEmitter"*) |
+| `paused-debugger.js` | Extends `EventEmitter` to observe debugger state changes |
+| `remote-node-picker-notice.js` | Same observer pattern |
+| `measuring-tool.js` | Observer pattern present (refactored from static EventEmitter) |
+| `rulers.js` | Same observer pattern |
+
 ## 5. Architectural Assessment
