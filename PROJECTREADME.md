@@ -173,3 +173,9 @@ class EyeDropper extends EventEmitter {
 According to the Dependency Inversion Principle, higher level modules should not depend on lower level modules. Both higher and lower level modules must depend on abstractions and not concrete implementations.
 
 This principle is observed by Firefox through its use of XPCOM. Each time one module requires another module, Firefox does not make the other module available to it in its concrete form. Instead, a call is made to the do_GetService() method, which returns a XPCOM interface. For example, if a component requires the cookie service, then do_GetService("@mozilla.org/cookieService") will be called and the component will receive an nsICookieService interface. Only the functionality offered by the interface will be important to the caller while the actual implementation is provided separately through the registration process in nsComponentManager.
+
+### Single Responsibility Principle
+
+The Single Responsibility Principle states that each module should have one specific job and be responsible only for that task.
+
+Firefox follows this principle by dividing its code into separate modules. For example, netwerk/ handles network communication, parser/ handles HTML and XML parsing, and layout/ handles page rendering. Likewise, storage/ manages databases, while security/ handles authentication and encryption. Because each module has a clear responsibility, developers can make changes to one area without affecting unrelated parts of the browser.
